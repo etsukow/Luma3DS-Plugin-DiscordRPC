@@ -1,0 +1,9 @@
+.git
+.gitignore
+.idea
+Build
+*.3gx
+*.elf
+work.elf
+work.3gx
+
