@@ -1,6 +1,6 @@
 # discord-rpc
 
-Plugin 3DS (`.3gx`) base sur CTRPluginFramework pour envoyer des evenements UDP vers un PC.
+Plugin 3DS (`.3gx`) base sur Luma3DS-Plugin-sample pour envoyer des evenements UDP vers un PC.
 
 ## Objectif
 
@@ -32,11 +32,12 @@ Valeurs par defaut (si `.env` absent): `127.0.0.1:5005`.
 
 ## Comportement actuel du plugin
 
-Dans `Sources/main.cpp`:
+Dans `Sources/plugin_main.c` (base Luma3DS-Plugin-sample):
 
-- envoie un paquet UDP `plugin_start` au lancement
-- ajoute une entree menu `Send UDP ping` pour envoyer `manual_ping`
-- ferme proprement le socket a la sortie du process
+- ouvre le menu Luma avec `SELECT`
+- envoie un paquet UDP `plugin_start` au lancement (si active)
+- permet `manual_ping` avec le bouton `A` quand l'entree est active
+- ecrit un log debug dans `sdmc:/ActionReplay/discord-rpc.log`
 
 Exemple de payload JSON:
 

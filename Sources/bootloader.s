@@ -3,22 +3,21 @@
 .section .text
 .global _start
 _start:
-stmfd   sp!, {r0-r12, lr}
-mrs     r0, cpsr
-stmfd   sp!, {r0}
+    stmfd   sp!, {r0-r12, lr}
+    mrs     r0, cpsr
+    stmfd   sp!, {r0}
 
-@ Clear the BSS section
-ldr     r0, = __c_bss_start
-ldr     r1, = __c_bss_end
-sub     r1, r1, r0
-bl      ClearMem
+    @ Clear the BSS section
+    ldr     r0, = __c_bss_start
+    ldr     r1, = __c_bss_end
+    sub     r1, r1, r0
+    bl      ClearMem
 
-bl      LaunchMainThread
+    bl      main
 
-ldmfd	sp!, {r0}
-msr		cpsr, r0
-ldmfd	sp!, {r0-r12, pc}
-bx      lr
+    ldmfd   sp!, {r0}
+    msr     cpsr, r0
+    ldmfd   sp!, {r0-r12, pc}
 
 @---------------------------------------------------------------------------------
 @ Clear memory to 0x00 if length != 0

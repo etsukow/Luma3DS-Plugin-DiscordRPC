@@ -6,6 +6,9 @@
 *.exit
 artifacts/
 .DS_Store
+.idea/
+titles/
+crash_dump_*.dmp
 .env
 .env.local
 .env.*

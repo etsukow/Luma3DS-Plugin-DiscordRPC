@@ -16,14 +16,7 @@
 
 #pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include "types.h"
-
-#define PA_RWX(add)            (add == 0 ? 0 : (add < 0x30000000 ? (u32)((add) | (1u << 31)) : add))
-#define PA_FROM_VA(addr)        PA_RWX(svcConvertVAToPA((void *)addr, false))
+#include <3ds/types.h>
 
 /// Operations for svcControlService
 typedef enum ServiceOp
@@ -78,18 +71,20 @@ void svcInvalidateEntireInstructionCache(void);
 ///@{
 /**
  * @brief Maps a block of process memory.
- * @param process Handle of the process.
+ * @param dstProcessHandle Handle of the process to map the memory in (destination)
  * @param destAddress Address of the mapped block in the current process.
+ * @param srcProcessHandle Handle of the process to map the memory from (source)
  * @param srcAddress Address of the mapped block in the source process.
  * @param size Size of the block of the memory to map (truncated to a multiple of 0x1000 bytes).
 */
-Result svcMapProcessMemoryEx(Handle dstProcessHandle, u32 vaDst, Handle srcProcessHandle, u32 vaSrc, u32 size);
+Result svcMapProcessMemoryEx(Handle dstProcessHandle, u32 destAddress, Handle srcProcessHandle, u32 vaSrc, u32 size);
 
 /**
  * @brief Unmaps a block of process memory.
- * @param process Handle of the process.
- * @param destAddress Address of the block of memory to unmap, in the current (destination) process.
+ * @param process Handle of the process to unmap the memory from
+ * @param destAddress Address of the block of memory to unmap
  * @param size Size of the block of memory to unmap (truncated to a multiple of 0x1000 bytes).
+ * This function should only be used to unmap memory mapped with svcMapProcessMemoryEx
  */
 Result svcUnmapProcessMemoryEx(Handle process, u32 destAddress, u32 size);
 
@@ -141,7 +136,6 @@ Result svcCopyHandle(Handle *out, Handle outProcess, Handle in, Handle inProcess
  * @param in The input handle.
 */
 Result svcTranslateHandle(u32 *outKAddr, char *outClassName, Handle in);
-///@}
 
 /// Operations for svcControlProcess
 typedef enum ProcessOp
@@ -154,11 +148,7 @@ typedef enum ProcessOp
     PROCESSOP_GET_ON_EXIT_EVENT,
     PROCESSOP_GET_PA_FROM_VA,   ///< Get the physical address of the va within the process
                                 ///< svcControlProcess(handle, PROCESSOP_GET_PA_FROM_VA, (u32)&outPa, va)
-    PROCESSOP_SCHEDULE_THREADS,
 } ProcessOp;
 
 Result  svcControlProcess(Handle process, ProcessOp op, u32 varg2, u32 varg3);
-
-#ifdef __cplusplus
-}
-#endif
+///@}
