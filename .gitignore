@@ -1,2 +1,9 @@
 /Build
 *.3gx
+*.elf
+*.log
+*.err
+*.exit
+artifacts/
+.DS_Store
+.env
