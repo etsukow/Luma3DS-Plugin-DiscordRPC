@@ -7,17 +7,14 @@ Version: # Plugin version
 
 Targets: # Low TitleId of games which are compatibles with this plugin (0 for all)
 
-Title: CTRPF - Blank Template
+Title: discord-rpc
 
-Summary: A CTRPF Plugin, with a lot of tools
+Summary: Discord Rich Presence bridge plugin for 3DS
 
 Description: |
-  This plugin gives you access to a set of tools to edit your games
+  This plugin sends 3DS events over UDP to a PC bridge for Discord Rich Presence.
 
   Features:
-    - Memory searcher
-    - Hex Editor
-    - Code creator
-    - Code import from file
-    - Action Replay engine with extra capabilities
-    - Super fast screenshot engine
+    - UDP event sending
+    - Manual ping entry from plugin menu
+    - Build-time target IP/port configuration via .env
