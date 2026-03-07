@@ -24,6 +24,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare CI env file
+        run: |
+          if [ -n "${{ secrets.IP_PC }}" ] && [ -n "${{ secrets.UDP_PORT }}" ]; then
+            printf 'IP_PC="%s"\nUDP_PORT=%s\n' "${{ secrets.IP_PC }}" "${{ secrets.UDP_PORT }}" > .env
+          elif [ -f .env.example ]; then
+            cp .env.example .env
+          elif [ -f .env.exemple ]; then
+            cp .env.exemple .env
+          else
+            printf 'IP_PC="127.0.0.1"\nUDP_PORT=5005\n' > .env
+          fi
+
       - name: Build Docker image
         run: |
           docker build \
@@ -35,6 +47,7 @@ jobs:
       - name: Build plugin
         run: |
           docker run --rm \
+            --env-file .env \
             -v "$PWD":/work \
             -w /work \
             "$IMAGE_NAME" \

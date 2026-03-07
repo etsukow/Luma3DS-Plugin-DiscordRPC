@@ -17,6 +17,12 @@ IP_PC="127.0.0.1"
 UDP_PORT=5005
 ```
 
+Tu peux partir de `.env.example` pour creer ton fichier local:
+
+```zsh
+cp .env.example .env
+```
+
 Variables injectees dans le code:
 
 - `IP_PC_STR`
@@ -114,6 +120,13 @@ Le workflow `/.github/workflows/build-3gx.yml`:
 - compile le plugin (`make clean all`)
 - publie les artefacts (`.3gx`, `.elf`, `.map`) dans l'onglet Actions
 - publie les memes fichiers en Release Assets sur les tags `v*`
+- cree un `.env` en CI depuis les Secrets `IP_PC` et `UDP_PORT` (ou fallback sur `.env.example`)
+
+Configuration conseillee dans GitHub:
+
+- `Settings > Secrets and variables > Actions > New repository secret`
+- ajouter `IP_PC`
+- ajouter `UDP_PORT`
 
 ## Test UDP cote PC
 
