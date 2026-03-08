@@ -1,150 +1,166 @@
-# discord-rpc
+# Luma3DS Plugin — Discord RPC
 
-Plugin 3DS (`.3gx`) base sur Luma3DS-Plugin-sample pour envoyer des evenements UDP vers un PC.
+Show your current 3DS game as a Discord Rich Presence status — automatically, in real time.
 
-## Objectif
+![Discord RPC preview](https://img.shields.io/badge/Discord-Rich%20Presence-5865F2?logo=discord&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
+![License](https://img.shields.io/github/license/etsukow/Luma3DS-Plugin-DiscordRPC)
 
-- Recuperer des infos cote 3DS (point de depart: evenements plugin)
-- Envoyer des messages UDP vers un PC
-- Servir de base pour un bridge Discord Rich Presence
+---
 
-## Configuration
+## How it works
 
-Le fichier `.env` est lu par le `Makefile` a la compilation:
-
-```dotenv
-IP_PC="127.0.0.1"
-UDP_PORT=5005
+```
+3DS (Luma3DS plugin) ──UDP──▶ server ──WebSocket──▶ client ──▶ Discord RPC
 ```
 
-Tu peux partir de `.env.example` pour creer ton fichier local:
+1. The `.3gx` plugin runs in the background on your 3DS and sends UDP packets containing the current title ID.
+2. The server resolves the game name and icon via [api.nlib.cc](https://api.nlib.cc) and broadcasts it over WebSocket.
+3. The PC client receives the game info and updates your Discord status.
+
+Protocol details: [`docs/protocol-v1.md`](docs/protocol-v1.md).
+
+---
+
+## Requirements
+
+- A 3DS with **custom firmware (Luma3DS)**
+- **Discord desktop app** running on your PC (web app not supported)
+- PC running **Windows, macOS, or Linux**
+- **Python 3.11+** (for server and client)
+- **Docker** (for building the `.3gx` plugin only)
+
+---
+
+## Quick start
+
+### 1. Install the plugin on your 3DS
+
+Download the latest `discord-rpc.3gx` from the [Releases](https://github.com/etsukow/Luma3DS-Plugin-DiscordRPC/releases/latest) page and copy it to your SD card:
+
+```
+SD:/luma/plugins/discord-rpc.3gx
+```
+
+Enable the plugin loader in Luma3DS settings (hold **SELECT** on boot) and make sure **"Game patching"** is on.
+
+> The plugin runs automatically in the background whenever you launch a game.
+
+---
+
+### 2. Configure
 
 ```zsh
 cp .env.example .env
 ```
 
-Variables injectees dans le code:
+Edit `.env` — the only required values are:
 
-- `IP_PC_STR`
-- `UDP_PORT_NUM`
+```dotenv
+# Your PC's local IP (the 3DS must be able to reach it)
+DRPC_SERVER_WS_URL=ws://192.168.1.XX:8765
 
-Valeurs par defaut (si `.env` absent): `127.0.0.1:5005`.
-
-## Comportement actuel du plugin
-
-Dans `Sources/plugin_main.c` (mode automatique):
-
-- envoie `plugin_start` au chargement
-- envoie `heartbeat` toutes les 10 secondes
-- chaque payload contient uniquement `event` et `titleId`
-
-Exemple de payload JSON:
-
-```json
-{"event":"heartbeat","titleId":"00040000000EC300"}
+# Your Discord application ID — create one at developer.discord.com
+DRPC_DISCORD_APP_ID=your_app_id_here
 ```
 
-Le nom et l'icone ne sont plus envoyes par la 3DS.
-Ils sont resolus cote PC via l'API `https://api.nlib.cc/ctr/:tid`.
+> `DRPC_SERVER_WS_URL` is used both to configure the client and to embed the server IP in the `.3gx` binary at build time.
 
-## Dockerisation complete
+---
 
-Le projet inclut maintenant une image build dediee dans `docker/Dockerfile`.
-
-### Ce que l'image initialise
-
-- base toolchain: `devkitpro/devkitarm`
-- build de `3gxtool` depuis `https://gitlab.com/thepixellizeross/3gxtool`
-- installation de `3gxtool` dans `/usr/local/bin/3gxtool`
-- variable `THREEGXTOOL` preconfiguree pour le `Makefile`
-
-### Construire l'image
+### 3. Start the server
 
 ```zsh
-docker build -f docker/Dockerfile -t ctrpf-drpc-builder .
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r server/requirements.txt
+python server/main.py
 ```
 
-### Build `.3gx` reproductible
+The server listens on:
+- **UDP `0.0.0.0:5005`** — receives packets from the 3DS plugin
+- **WebSocket `0.0.0.0:8765`** — broadcasts game info to clients
+
+---
+
+### 4. Start the client
+
+In a second terminal:
 
 ```zsh
-docker run --rm \
-  --env-file .env \
-  -v "$PWD":/work \
-  -w /work \
-  ctrpf-drpc-builder \
-  sh -lc "make clean all THREEGXTOOL=/usr/local/bin/3gxtool"
+source .venv/bin/activate
+pip install -r client/requirements.txt
+python client/main.py
 ```
 
-### Build `.elf` (sans packaging)
+Launch a game on your 3DS — your Discord status will update automatically.
+
+---
+
+## Building the plugin yourself
+
+Build the `.3gx` binary using Docker (no toolchain setup required):
 
 ```zsh
-docker run --rm \
-  --env-file .env \
-  -v "$PWD":/work \
-  -w /work \
-  ctrpf-drpc-builder \
-  sh -lc "make clean elf THREEGXTOOL=/usr/local/bin/3gxtool"
-```
-
-## Docker Compose
-
-Le fichier `docker-compose.yml` fournit le meme flux avec une commande unique:
-
-```zsh
+# Make sure DRPC_SERVER_WS_URL is set in .env with your PC's local IP
 docker compose run --rm builder
 ```
 
-## Script helper
+The compiled `discord-rpc.3gx` will appear in the project root. Copy it to your SD card as described above.
 
-Un script est fourni pour simplifier le flux:
+---
 
-- `scripts/docker-build.sh` (target par defaut: `all`)
-- target possible: `elf`
+## Configuration reference
 
-Exemples:
+All values can be set in `.env` or as environment variables.
 
-```zsh
-./scripts/docker-build.sh
-./scripts/docker-build.sh elf
+| Variable | Default | Description |
+|---|---|---|
+| `DRPC_SERVER_WS_URL` | `ws://127.0.0.1:8765` | WebSocket URL of the server (also used to embed the IP in the plugin at build time) |
+| `UDP_PORT` | `5005` | UDP port the plugin sends to |
+| `DRPC_UDP_HOST` | `0.0.0.0` | Server UDP bind address |
+| `DRPC_UDP_PORT` | `5005` | Server UDP bind port |
+| `DRPC_WS_HOST` | `0.0.0.0` | Server WebSocket bind address |
+| `DRPC_WS_PORT` | `8765` | Server WebSocket bind port |
+| `DRPC_DISCORD_APP_ID` | — | **Required.** Discord application ID |
+| `DRPC_FALLBACK_ICON` | `nintendo_3ds` | Icon key used when none is found for a title |
+| `DRPC_RPC_MIN_INTERVAL` | `15` | Minimum seconds between RPC updates (heartbeats) |
+| `DRPC_WATCHDOG_TIMEOUT_SEC` | `25` | Seconds without a heartbeat before RPC is cleared |
+| `DRPC_API_TIMEOUT_SEC` | `5.0` | Timeout for title info API requests |
+
+---
+
+## TitleID mapping
+
+Some titles (updates, DLCs, regional variants) have a different TitleID than their base game and may not be found by the API. You can remap them in `server/tid_map.json`:
+
+```json
+{
+  "0004000000185A00": "0004000000164600"
+}
 ```
 
-Variables utiles:
+The server will resolve and display the canonical title instead.
 
-- `IMAGE_NAME` (defaut: `ctrpf-drpc-builder`)
-- `DOCKERFILE_PATH` (defaut: `docker/Dockerfile`)
-- `THREEGXTOOL_REPO` (defaut: `https://gitlab.com/thepixellizeross/3gxtool`)
-- `THREEGXTOOL_REF` (defaut: `master`)
+---
 
-## GitHub Actions
+## Troubleshooting
 
-Le workflow `/.github/workflows/build-3gx.yml`:
+**Discord status not showing up**
+- Make sure the Discord **desktop app** is running (not the web version)
+- Go to Discord **Settings → Activity Privacy** and enable "Display current activity as a status message"
+- Check that `DRPC_SERVER_WS_URL` in `.env` matches your PC's local IP
 
-- build l'image Docker (avec `3gxtool`)
-- compile le plugin (`make clean all`)
-- publie les artefacts (`.3gx`, `.elf`, `.map`) dans l'onglet Actions
-- publie les memes fichiers en Release Assets sur les tags `v*`
-- cree un `.env` en CI depuis les Secrets `IP_PC` et `UDP_PORT` (ou fallback sur `.env.example`)
+**No events received on the server**
+- Verify `DRPC_SERVER_WS_URL` in `.env` contains the right IP and rebuild the `.3gx`
+- Check that UDP port `5005` is not blocked by your firewall
+- Make sure the 3DS and your PC are on the same network
 
-Configuration conseillee dans GitHub:
+**Plugin not loading**
+- Confirm the file is at `SD:/luma/plugins/discord-rpc.3gx`
+- Make sure "Game patching" is enabled in Luma3DS settings (hold SELECT on boot)
 
-- `Settings > Secrets and variables > Actions > New repository secret`
-- ajouter `IP_PC`
-- ajouter `UDP_PORT`
+---
 
-## Test UDP cote PC
+## License
 
-Lancer le listener UDP avec resolution API:
-
-```zsh
-python3 udp_logger.py
-```
-
-Le logger ecoute sur `0.0.0.0:5005`, affiche les JSON recus puis une ligne enrichie avec:
-
-- `name` (nom du jeu)
-- `icon` (URL de `media.icon`)
-
-Puis lancer le plugin sur la 3DS:
-
-- verifier les evenements `plugin_start` puis `heartbeat`
-- verifier que `titleId` est resolu en `name` et `icon`
+MIT — see [LICENSE](LICENSE)
