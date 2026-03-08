@@ -27,6 +27,8 @@
 #define HEARTBEAT_INTERVAL_MS 10000
 #define RETRY_INTERVAL_MS 2000
 #define SOC_RETRY_INTERVAL_MS 15000
+#define MAX_RETRY_INTERVAL_MS 30000
+#define PROTOCOL_SCHEMA_VERSION 1
 
 static Handle thread;
 static u8 stack[STACK_SIZE] __attribute__((aligned(8)));
@@ -43,8 +45,17 @@ static bool gSocInitialized = false;
 static int gUdpSocket = -1;
 static struct sockaddr_in gRemoteAddr;
 static bool gRemoteConfigured = false;
-static bool gSocUnsupported = false;
+static bool gSocTemporarilyUnavailable = false;
 static u64 gNextSocRetryMs = 0;
+
+static void ResetUdpSocket(void)
+{
+    if (gUdpSocket >= 0)
+    {
+        close(gUdpSocket);
+        gUdpSocket = -1;
+    }
+}
 
 static bool ConfigureRemote(void)
 {
@@ -76,8 +87,12 @@ static bool TryInitSoc(void)
     if (gSocInitialized)
         return true;
 
-    if (gSocUnsupported)
-        return false;
+    if (gSocTemporarilyUnavailable)
+    {
+        if (osGetTime() < gNextSocRetryMs)
+            return false;
+        gSocTemporarilyUnavailable = false;
+    }
 
     if (gSocBuffer == NULL)
     {
@@ -89,11 +104,8 @@ static bool TryInitSoc(void)
     Result rc = socInit((u32 *)gSocBuffer, SOC_BUFFERSIZE);
     if (R_FAILED(rc))
     {
-        if ((u32)rc == 0xE0A01BF5)
-        {
-            gSocUnsupported = true;
-            gNextSocRetryMs = osGetTime() + SOC_RETRY_INTERVAL_MS;
-        }
+        gSocTemporarilyUnavailable = true;
+        gNextSocRetryMs = osGetTime() + SOC_RETRY_INTERVAL_MS;
         return false;
     }
 
@@ -110,19 +122,18 @@ static bool EnsureUdpSocket(void)
         return false;
 
     if (!TryInitSoc())
-    {
-        if (gSocUnsupported)
-        {
-            u64 now = osGetTime();
-            if (now >= gNextSocRetryMs)
-                gSocUnsupported = false;
-        }
         return false;
-    }
 
     errno = 0;
     gUdpSocket = socket(AF_INET, SOCK_DGRAM, 0);
-    return (gUdpSocket >= 0);
+    if (gUdpSocket < 0)
+    {
+        gSocTemporarilyUnavailable = true;
+        gNextSocRetryMs = osGetTime() + SOC_RETRY_INTERVAL_MS;
+        return false;
+    }
+
+    return true;
 }
 
 static bool TryGetCurrentTitleId(u64 *outTitleId)
@@ -155,7 +166,13 @@ static bool SendRawUdp(const void *data, size_t size)
     ssize_t sent = sendto(gUdpSocket, data, size, 0,
         (const struct sockaddr *)&gRemoteAddr, sizeof(gRemoteAddr));
 
-    return (sent == (ssize_t)size);
+    if (sent != (ssize_t)size)
+    {
+        ResetUdpSocket();
+        return false;
+    }
+
+    return true;
 }
 
 static bool SendEventWithTitleId(const char *eventName)
@@ -164,9 +181,10 @@ static bool SendEventWithTitleId(const char *eventName)
     if (!TryGetCurrentTitleId(&titleId))
         return false;
 
-    char payload[160];
+    char payload[192];
     snprintf(payload, sizeof(payload),
-        "{\"event\":\"%s\",\"titleId\":\"%016llX\"}",
+        "{\"schemaVersion\":%d,\"event\":\"%s\",\"titleId\":\"%016llX\"}",
+        PROTOCOL_SCHEMA_VERSION,
         eventName,
         (unsigned long long)titleId);
 
@@ -178,6 +196,7 @@ static void ThreadMain(void *arg)
     (void)arg;
 
     bool startupSent = false;
+    u64 retryIntervalMs = RETRY_INTERVAL_MS;
     u64 nextRetry = osGetTime();
     u64 nextHeartbeat = 0;
 
@@ -193,11 +212,18 @@ static void ThreadMain(void *arg)
                 if (SendEventWithTitleId("plugin_start"))
                 {
                     startupSent = true;
+                    retryIntervalMs = RETRY_INTERVAL_MS;
                     nextHeartbeat = now + HEARTBEAT_INTERVAL_MS;
                 }
                 else
                 {
-                    nextRetry = now + RETRY_INTERVAL_MS;
+                    nextRetry = now + retryIntervalMs;
+                    if (retryIntervalMs < MAX_RETRY_INTERVAL_MS)
+                    {
+                        retryIntervalMs *= 2;
+                        if (retryIntervalMs > MAX_RETRY_INTERVAL_MS)
+                            retryIntervalMs = MAX_RETRY_INTERVAL_MS;
+                    }
                 }
             }
             continue;
@@ -212,7 +238,7 @@ static void ThreadMain(void *arg)
             else
             {
                 startupSent = false;
-                nextRetry = now + RETRY_INTERVAL_MS;
+                nextRetry = now + retryIntervalMs;
             }
         }
     }
