@@ -4,15 +4,18 @@ ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
 endif
 
-# Load optional local env configuration (IP_PC / UDP_PORT)
+# Load optional local env configuration (DRPC_SERVER_WS_URL / UDP_PORT)
 ifneq ("$(wildcard $(CURDIR)/.env)","")
 include $(CURDIR)/.env
 endif
 
-IP_PC_RAW      := $(strip $(IP_PC))
-UDP_PORT_RAW   := $(strip $(UDP_PORT))
+# Extract IP from DRPC_SERVER_WS_URL (ws://1.2.3.4:5005 -> 1.2.3.4)
 DQ             := $(shell printf '"')
-IP_PC_CLEAN    := $(subst $(DQ),,$(IP_PC_RAW))
+_WS_URL_RAW    := $(strip $(DRPC_SERVER_WS_URL))
+_WS_URL_CLEAN  := $(subst $(DQ),,$(subst ws://,,$(subst wss://,,$(strip $(_WS_URL_RAW)))))
+# Strip port: keep everything before the last colon
+IP_PC_CLEAN    := $(firstword $(subst :, ,$(_WS_URL_CLEAN)))
+UDP_PORT_RAW   := $(strip $(UDP_PORT))
 
 ifeq ($(IP_PC_CLEAN),)
 IP_PC_CLEAN := 127.0.0.1
