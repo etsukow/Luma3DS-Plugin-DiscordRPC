@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-IMAGE_NAME="${IMAGE_NAME:-ctrpf-drpc-builder}"
+IMAGE_NAME="${IMAGE_NAME:-luma-drpc-builder}"
 DOCKERFILE_PATH="${DOCKERFILE_PATH:-docker/Dockerfile}"
 THREEGXTOOL_REPO="${THREEGXTOOL_REPO:-https://gitlab.com/thepixellizeross/3gxtool}"
 THREEGXTOOL_REF="${THREEGXTOOL_REF:-master}"
