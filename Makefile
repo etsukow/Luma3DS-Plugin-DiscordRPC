@@ -26,7 +26,7 @@ TOPDIR      ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
 TARGET      := default
-PLGINFO     := CTRPluginFramework.plgInfo
+PLGINFO     := discord-rpc.plgInfo
 THREEGXTOOL := $(or $(strip $(THREEGXTOOL)),3gxtool)
 
 BUILD       := Build

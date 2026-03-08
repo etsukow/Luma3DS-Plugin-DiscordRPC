@@ -33,6 +33,11 @@ static u8 stack[STACK_SIZE] __attribute__((aligned(8)));
 
 void *__service_ptr = NULL;
 
+// libctru service/thread objects reference these symbols during plugin linkage.
+u32 __apt_appid = 0;
+u32 __system_runflags = 0;
+u32 __tdata_align = 8;
+
 static void *gSocBuffer = NULL;
 static bool gSocInitialized = false;
 static int gUdpSocket = -1;
@@ -120,44 +125,52 @@ static bool EnsureUdpSocket(void)
     return (gUdpSocket >= 0);
 }
 
-static void CleanupUdp(void)
+static bool TryGetCurrentTitleId(u64 *outTitleId)
 {
-    if (gUdpSocket >= 0)
-    {
-        close(gUdpSocket);
-        gUdpSocket = -1;
-    }
+    if (outTitleId == NULL)
+        return false;
 
-    if (gSocInitialized)
-    {
-        socExit();
-        gSocInitialized = false;
-    }
+    s64 programId = 0;
 
-    if (gSocBuffer != NULL)
-    {
-        free(gSocBuffer);
-        gSocBuffer = NULL;
-    }
+    // Prefer the commonly used process-info key for ProgramID and keep one fallback.
+    Result rc = svcGetProcessInfo(&programId, CUR_PROCESS_HANDLE, 0x10001);
+    if (R_FAILED(rc))
+        rc = svcGetProcessInfo(&programId, CUR_PROCESS_HANDLE, 0x10000);
 
-    gSocUnsupported = false;
-    gNextSocRetryMs = 0;
+    if (R_FAILED(rc) || programId == 0)
+        return false;
+
+    *outTitleId = (u64)programId;
+    return true;
 }
 
-static bool SendEvent(const char *eventName)
+static bool SendRawUdp(const void *data, size_t size)
 {
+    if (data == NULL || size == 0)
+        return false;
+
     if (!EnsureUdpSocket())
         return false;
 
-    char payload[192];
-    snprintf(payload, sizeof(payload),
-        "{\"event\":\"%s\",\"plugin\":\"discord-rpc\",\"target\":\"%s:%u\"}",
-        eventName, IP_PC_STR, (unsigned int)UDP_PORT_NUM);
-
-    ssize_t sent = sendto(gUdpSocket, payload, strlen(payload), 0,
+    ssize_t sent = sendto(gUdpSocket, data, size, 0,
         (const struct sockaddr *)&gRemoteAddr, sizeof(gRemoteAddr));
 
-    return (sent == (ssize_t)strlen(payload));
+    return (sent == (ssize_t)size);
+}
+
+static bool SendEventWithTitleId(const char *eventName)
+{
+    u64 titleId = 0;
+    if (!TryGetCurrentTitleId(&titleId))
+        return false;
+
+    char payload[160];
+    snprintf(payload, sizeof(payload),
+        "{\"event\":\"%s\",\"titleId\":\"%016llX\"}",
+        eventName,
+        (unsigned long long)titleId);
+
+    return SendRawUdp(payload, strlen(payload));
 }
 
 static void ThreadMain(void *arg)
@@ -177,7 +190,7 @@ static void ThreadMain(void *arg)
         {
             if (now >= nextRetry)
             {
-                if (SendEvent("plugin_start"))
+                if (SendEventWithTitleId("plugin_start"))
                 {
                     startupSent = true;
                     nextHeartbeat = now + HEARTBEAT_INTERVAL_MS;
@@ -192,7 +205,7 @@ static void ThreadMain(void *arg)
 
         if (now >= nextHeartbeat)
         {
-            if (SendEvent("heartbeat"))
+            if (SendEventWithTitleId("heartbeat"))
             {
                 nextHeartbeat = now + HEARTBEAT_INTERVAL_MS;
             }

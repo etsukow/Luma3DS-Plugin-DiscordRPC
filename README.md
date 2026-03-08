@@ -36,14 +36,16 @@ Dans `Sources/plugin_main.c` (mode automatique):
 
 - envoie `plugin_start` au chargement
 - envoie `heartbeat` toutes les 10 secondes
-- envoie `plugin_exit` a la fermeture
-- ecrit un log debug dans `sdmc:/discord-rpc.log`
+- chaque payload contient uniquement `event` et `titleId`
 
 Exemple de payload JSON:
 
 ```json
-{"event":"heartbeat","plugin":"discord-rpc","target":"127.0.0.1:5005"}
+{"event":"heartbeat","titleId":"00040000000EC300"}
 ```
+
+Le nom et l'icone ne sont plus envoyes par la 3DS.
+Ils sont resolus cote PC via l'API `https://api.nlib.cc/ctr/:tid`.
 
 ## Dockerisation complete
 
@@ -131,13 +133,18 @@ Configuration conseillee dans GitHub:
 
 ## Test UDP cote PC
 
-Lancer un listener UDP sur le port configure:
+Lancer le listener UDP avec resolution API:
 
 ```zsh
-nc -ul 5005
+python3 udp_logger.py
 ```
+
+Le logger ecoute sur `0.0.0.0:5005`, affiche les JSON recus puis une ligne enrichie avec:
+
+- `name` (nom du jeu)
+- `icon` (URL de `media.icon`)
 
 Puis lancer le plugin sur la 3DS:
 
-- verifier dans le logger UDP les evenements `plugin_start`, `heartbeat`, `plugin_exit`
-- verifier `sdmc:/discord-rpc.log` si besoin de diagnostic
+- verifier les evenements `plugin_start` puis `heartbeat`
+- verifier que `titleId` est resolu en `name` et `icon`
