@@ -161,14 +161,7 @@ class UdpProtocol(asyncio.DatagramProtocol):
             return
 
         # Always refresh the watchdog timestamp, even for silent heartbeats.
-        self.state.last_seen = asyncio.get_event_loop().time()
-
-        if event == "plugin_stop":
-            print(f"[{now_iso()}] udp={host}:{port} event=plugin_stop titleId={tid}", flush=True)
-            self.state.last_seen = None
-            self.state.last_title_id = None
-            await broadcast_json(self.state, {"type": "clear"})
-            return
+        self.state.last_seen = asyncio.get_running_loop().time()
 
         # Remap to canonical base-game TitleID if needed.
         canonical_tid = TID_MAP.get(tid, tid)
@@ -205,7 +198,7 @@ async def watchdog(state: BridgeState) -> None:
         await asyncio.sleep(5)
         if state.last_seen is None:
             continue
-        elapsed = asyncio.get_event_loop().time() - state.last_seen
+        elapsed = asyncio.get_running_loop().time() - state.last_seen
         if elapsed >= WATCHDOG_TIMEOUT_SEC:
             print(f"[{now_iso()}] watchdog: no heartbeat for {elapsed:.0f}s — clearing RPC", flush=True)
             state.last_seen = None

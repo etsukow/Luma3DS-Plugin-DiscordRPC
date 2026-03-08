@@ -227,7 +227,7 @@ def _linux_install() -> None:
     _LINUX_SERVICE_PATH.parent.mkdir(parents=True, exist_ok=True)
     unit = _LINUX_SERVICE_TEMPLATE.format(
         display_name=DISPLAY_NAME,
-        exe=sys.executable,
+        exe=_exe_path(),
     )
     _LINUX_SERVICE_PATH.write_text(unit, encoding="utf-8")
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
@@ -305,52 +305,51 @@ def start() -> None:
     """Start the service detached from the current terminal session.
     No-op if an instance is already running (lock held).
     """
-    # Check if already running before spawning.
-    try:
-        import fcntl  # type: ignore
-        fh = open(_LOCK_FILE, "w")
-        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        fh.close()
-        # Lock acquired → nobody running, safe to start.
-    except (ImportError, OSError):
-        # ImportError = Windows (handled below), OSError = already running.
-        if platform.system() != "Windows":
-            return  # already running on Unix
-
     system = platform.system()
-    if system == "Darwin":
-        subprocess.Popen(
-            ["launchctl", "start", f"cc.{APP_NAME}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    elif system == "Linux":
-        subprocess.Popen(
-            ["systemctl", "--user", "start", APP_NAME],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-    elif system == "Windows":
+
+    if system == "Windows":
         import msvcrt  # type: ignore
+        fh = None
         try:
             fh = open(_LOCK_FILE, "w")
             msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-            fh.close()
-            # Lock acquired → nobody running, safe to start.
+            DETACHED_PROCESS = 0x00000008
+            CREATE_NO_WINDOW = 0x08000000
+            subprocess.Popen(
+                [sys.executable],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+                close_fds=True,
+            )
         except OSError:
-            return  # already running
-        DETACHED_PROCESS = 0x00000008
-        CREATE_NO_WINDOW = 0x08000000
-        subprocess.Popen(
-            [sys.executable],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
-            close_fds=True,
-        )
+            return
+        finally:
+            if fh is not None:
+                fh.close()
+    else:
+        import fcntl  # type: ignore
+        fh = None
+        try:
+            fh = open(_LOCK_FILE, "w")
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            cmd = (
+                ["launchctl", "start", f"cc.{APP_NAME}"]
+                if system == "Darwin"
+                else ["systemctl", "--user", "start", APP_NAME]
+            )
+            subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError:
+            return
+        finally:
+            if fh is not None:
+                fh.close()
 
 
 def uninstall() -> None:

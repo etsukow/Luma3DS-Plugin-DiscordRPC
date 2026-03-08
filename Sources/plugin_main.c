@@ -278,5 +278,7 @@ void main(void)
     if (R_FAILED(createRes))
     {
         PLGLDR__DisplayErrMessage("discord-rpc", "svcCreateThread failed", (u32)createRes);
+        return;
     }
+    svcCloseHandle(thread);
 }
