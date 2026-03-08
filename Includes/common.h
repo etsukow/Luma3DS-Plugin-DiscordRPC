@@ -23,5 +23,4 @@
 #define BUTTON_X                (1 << 10)
 #define BUTTON_Y                (1 << 11)
 
-#define STACK_SIZE              (0x1000)
-
+#define STACK_SIZE              (0x8000)

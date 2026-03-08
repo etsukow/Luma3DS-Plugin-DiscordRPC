@@ -56,7 +56,7 @@ jobs:
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
-          for f in discord-rpc.3gx discord-rpc.elf Build/*.map; do
+          for f in default.3gx default.elf Build/*.map; do
             if [ -f "$f" ]; then
               cp "$f" artifacts/
             fi

@@ -25,7 +25,7 @@ endif
 TOPDIR      ?= $(CURDIR)
 include $(DEVKITARM)/3ds_rules
 
-TARGET      := discord-rpc
+TARGET      := default
 PLGINFO     := CTRPluginFramework.plgInfo
 THREEGXTOOL := $(or $(strip $(THREEGXTOOL)),3gxtool)
 

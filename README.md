@@ -32,17 +32,17 @@ Valeurs par defaut (si `.env` absent): `127.0.0.1:5005`.
 
 ## Comportement actuel du plugin
 
-Dans `Sources/plugin_main.c` (base Luma3DS-Plugin-sample):
+Dans `Sources/plugin_main.c` (mode automatique):
 
-- ouvre le menu Luma avec `SELECT`
-- envoie un paquet UDP `plugin_start` au lancement (si active)
-- permet `manual_ping` avec le bouton `A` quand l'entree est active
-- ecrit un log debug dans `sdmc:/ActionReplay/discord-rpc.log`
+- envoie `plugin_start` au chargement
+- envoie `heartbeat` toutes les 10 secondes
+- envoie `plugin_exit` a la fermeture
+- ecrit un log debug dans `sdmc:/discord-rpc.log`
 
 Exemple de payload JSON:
 
 ```json
-{"event":"manual_ping","plugin":"discord-rpc","target":"127.0.0.1:5005"}
+{"event":"heartbeat","plugin":"discord-rpc","target":"127.0.0.1:5005"}
 ```
 
 ## Dockerisation complete
@@ -139,5 +139,5 @@ nc -ul 5005
 
 Puis lancer le plugin sur la 3DS:
 
-- un message `plugin_start` doit apparaitre
-- ouvrir le menu et executer `Send UDP ping` pour verifier `manual_ping`
+- verifier dans le logger UDP les evenements `plugin_start`, `heartbeat`, `plugin_exit`
+- verifier `sdmc:/discord-rpc.log` si besoin de diagnostic
