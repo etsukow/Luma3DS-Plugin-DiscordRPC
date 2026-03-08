@@ -14,11 +14,11 @@ JSON object:
 
 Fields:
 - `schemaVersion` (number): protocol version, currently `1` (matches `PROTOCOL_SCHEMA_VERSION` in `plugin_main.c`).
-- `event` (string): `plugin_start`, `heartbeat`, or `plugin_stop`.
+- `event` (string): `plugin_start` or `heartbeat`.
 - `titleId` (string): 16-char uppercase hex title ID.
 
-> `plugin_stop` is sent when the game exits. It carries a valid `titleId` but the
-> server treats it as a clear signal and does not resolve the title.
+> Game exit is detected server-side via the watchdog: if no heartbeat is received
+> within `DRPC_WATCHDOG_TIMEOUT_SEC` seconds, the server broadcasts a `clear` event.
 
 ## 2) WebSocket payload from server (server -> PC client)
 

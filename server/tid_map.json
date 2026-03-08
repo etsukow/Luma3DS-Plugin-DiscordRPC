@@ -1,5 +1,6 @@
 {
   "_comment": "Maps TitleIDs that are missing from the API (updates, DLCs, regional variants) to their canonical base game TitleID.",
-  "0004000000185A00": "0004000000164600"
+  "0004000000185A00": "0004000000164600",
+  "00040000001D6900": "00040000001D6800"
 }
 
