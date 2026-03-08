@@ -1,0 +1,62 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Plugin 3DS (.3gx) ───────────────────────────────────────────────────────
+  build-plugin:
+    uses: ./.github/workflows/build-3gx.yml
+    secrets:
+      DRPC_SERVER_WS_URL: ${{ secrets.DRPC_SERVER_WS_URL }}
+      UDP_PORT: ${{ secrets.UDP_PORT }}
+
+  # ── PC client (Windows / macOS / Linux) ────────────────────────────────────
+  build-client:
+    needs: build-plugin
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: 3DS-DiscordRPC.exe
+            asset_name: 3DS-DiscordRPC-windows.exe
+
+          - os: macos-latest
+            artifact_name: 3DS-DiscordRPC
+            asset_name: 3DS-DiscordRPC-macos
+
+          - os: ubuntu-latest
+            artifact_name: 3DS-DiscordRPC
+            asset_name: 3DS-DiscordRPC-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r client/requirements.txt pyinstaller
+
+      - name: Build
+        working-directory: client
+        run: pyinstaller client.spec
+
+      - name: Rename artifact
+        shell: bash
+        run: mv client/dist/${{ matrix.artifact_name }} client/dist/${{ matrix.asset_name }}
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: client/dist/${{ matrix.asset_name }}
+          generate_release_notes: true

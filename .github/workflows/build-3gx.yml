@@ -8,6 +8,12 @@ on:
       - "v*"
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    secrets:
+      DRPC_SERVER_WS_URL:
+        required: false
+      UDP_PORT:
+        required: false
 
 permissions:
   contents: write
@@ -26,15 +32,17 @@ jobs:
 
       - name: Prepare CI env file
         run: |
-          if [ -n "${{ secrets.IP_PC }}" ] && [ -n "${{ secrets.UDP_PORT }}" ]; then
-            printf 'IP_PC="%s"\nUDP_PORT=%s\n' "${{ secrets.IP_PC }}" "${{ secrets.UDP_PORT }}" > .env
+          if [ -n "${{ secrets.DRPC_SERVER_WS_URL }}" ]; then
+            printf 'DRPC_SERVER_WS_URL="%s"\nUDP_PORT=%s\n' \
+              "${{ secrets.DRPC_SERVER_WS_URL }}" \
+              "${UDP_PORT:-5005}" > .env
           elif [ -f .env.example ]; then
             cp .env.example .env
-          elif [ -f .env.exemple ]; then
-            cp .env.exemple .env
           else
-            printf 'IP_PC="127.0.0.1"\nUDP_PORT=5005\n' > .env
+            printf 'DRPC_SERVER_WS_URL="ws://127.0.0.1:8765"\nUDP_PORT=5005\n' > .env
           fi
+        env:
+          UDP_PORT: ${{ secrets.UDP_PORT }}
 
       - name: Build Docker image
         run: |
