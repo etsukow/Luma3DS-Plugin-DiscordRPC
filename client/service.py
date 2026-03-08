@@ -10,13 +10,45 @@ when the user logs in.
 
 from __future__ import annotations
 
+import os
 import platform
 import subprocess
 import sys
 from pathlib import Path
+import tempfile
 
 APP_NAME = "luma3ds-discord-rpc"
 DISPLAY_NAME = "3DS Discord RPC"
+
+# ── Single-instance lock ──────────────────────────────────────────────────────
+
+_LOCK_FILE = Path(tempfile.gettempdir()) / f"{APP_NAME}.lock"
+_lock_fh = None  # kept alive to hold the lock
+
+
+def acquire_instance_lock() -> bool:
+    """Try to acquire a process-level lock. Returns False if another instance is running."""
+    global _lock_fh
+    if platform.system() == "Windows":
+        import msvcrt  # type: ignore
+        try:
+            _lock_fh = open(_LOCK_FILE, "w")
+            msvcrt.locking(_lock_fh.fileno(), msvcrt.LK_NBLCK, 1)
+            _lock_fh.write(str(os.getpid()))
+            _lock_fh.flush()
+            return True
+        except OSError:
+            return False
+    else:
+        import fcntl  # type: ignore
+        try:
+            _lock_fh = open(_LOCK_FILE, "w")
+            fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock_fh.write(str(os.getpid()))
+            _lock_fh.flush()
+            return True
+        except OSError:
+            return False
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -233,27 +265,31 @@ def is_installed() -> bool:
     return False
 
 
-def install() -> None:
-    """Register the client as a login item, or update the entry if the exe path changed."""
+def install() -> bool:
+    """Register the client as a login item, or update the entry if the exe path changed.
+
+    Returns True if the service was installed or updated, False if already up-to-date.
+    """
     if not _is_frozen():
-        # Don't register startup when running as plain Python script.
-        return
+        return False
 
     registered = _registered_exe()
     current = sys.executable
 
     if registered == current:
         # Already up-to-date, nothing to do.
-        return
+        return False
 
     system = platform.system()
     if system not in ("Windows", "Darwin", "Linux"):
-        return
+        return False
 
     if registered is not None:
         # Path changed (new version installed elsewhere) — reinstall.
         uninstall()
         print(f"[service] Updating auto-start: {registered} -> {current}", flush=True)
+    else:
+        print(f"[service] Auto-start registered ({system})", flush=True)
 
     if system == "Windows":
         _win_install()
@@ -262,8 +298,59 @@ def install() -> None:
     elif system == "Linux":
         _linux_install()
 
-    if registered is None:
-        print(f"[service] Auto-start registered ({system})", flush=True)
+    return True
+
+
+def start() -> None:
+    """Start the service detached from the current terminal session.
+    No-op if an instance is already running (lock held).
+    """
+    # Check if already running before spawning.
+    try:
+        import fcntl  # type: ignore
+        fh = open(_LOCK_FILE, "w")
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fh.close()
+        # Lock acquired → nobody running, safe to start.
+    except (ImportError, OSError):
+        # ImportError = Windows (handled below), OSError = already running.
+        if platform.system() != "Windows":
+            return  # already running on Unix
+
+    system = platform.system()
+    if system == "Darwin":
+        subprocess.Popen(
+            ["launchctl", "start", f"cc.{APP_NAME}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    elif system == "Linux":
+        subprocess.Popen(
+            ["systemctl", "--user", "start", APP_NAME],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    elif system == "Windows":
+        import msvcrt  # type: ignore
+        try:
+            fh = open(_LOCK_FILE, "w")
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            fh.close()
+            # Lock acquired → nobody running, safe to start.
+        except OSError:
+            return  # already running
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NO_WINDOW = 0x08000000
+        subprocess.Popen(
+            [sys.executable],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
+            close_fds=True,
+        )
 
 
 def uninstall() -> None:

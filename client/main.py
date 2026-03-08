@@ -22,7 +22,7 @@ import websocket
 from pypresence import Presence, exceptions as rpc_exc
 
 from config import ClientConfig, load_config
-from service import install as install_service
+from service import install as install_service, start as start_service, acquire_instance_lock
 
 
 
@@ -159,6 +159,10 @@ def run(config: ClientConfig) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main() -> int:
+    if not acquire_instance_lock():
+        # Another instance is already running — exit silently.
+        return 0
+
     config = load_config()
 
     def stop(_s, _f):
@@ -167,7 +171,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
-    install_service()
+
+    if install_service():
+        print(f"[{now_iso()}] Service installé — démarrage en arrière-plan.", flush=True)
+        start_service()
+        return 0
 
     print(f"[{now_iso()}] 3DS Discord RPC démarré", flush=True)
     print(f"[{now_iso()}] Serveur WS: {config.server_ws_url}", flush=True)
