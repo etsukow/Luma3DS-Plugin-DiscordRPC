@@ -1,3 +1,9 @@
+# Builds the .3gx plugin binary using devkitARM + 3gxtool.
+#
+# Usage:
+#   docker compose run --rm builder
+#   # output: default.3gx
+
 services:
   builder:
     build:
