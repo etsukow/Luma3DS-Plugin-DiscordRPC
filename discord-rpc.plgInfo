@@ -20,5 +20,5 @@ Description: |
     - Build-time target IP/port configuration via .env
 
 Compatibility: Any
-MemorySize: 5MiB
+MemorySize: 2MiB
 UsePrivateMemory: true

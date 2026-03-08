@@ -30,15 +30,17 @@
 #define MAX_RETRY_INTERVAL_MS 30000
 #define PROTOCOL_SCHEMA_VERSION 1
 
-static Handle thread;
-static u8 stack[STACK_SIZE] __attribute__((aligned(8)));
-
 void *__service_ptr = NULL;
 
 // libctru service/thread objects reference these symbols during plugin linkage.
 u32 __apt_appid = 0;
 u32 __system_runflags = 0;
 u32 __tdata_align = 8;
+
+// The custom plugin entrypoint bypasses libctru's normal startup, so initialize
+// the minimal runtime pieces we depend on before using libctru/newlib helpers.
+Result __sync_init(void);
+void __system_initSyscalls(void);
 
 static void *gSocBuffer = NULL;
 static bool gSocInitialized = false;
@@ -269,16 +271,16 @@ void main(void)
         return;
 
     __system_allocateHeaps(header);
+    __sync_init();
+    __system_initSyscalls();
 
     srvInit();
     plgLdrInit();
 
-    Result createRes = svcCreateThread(&thread, ThreadMain, 0,
-        (u32 *)(stack + STACK_SIZE), 30, -1);
-    if (R_FAILED(createRes))
+    Thread thread = threadCreate(ThreadMain, NULL, STACK_SIZE, 30, -2, true);
+    if (thread == NULL)
     {
-        PLGLDR__DisplayErrMessage("discord-rpc", "svcCreateThread failed", (u32)createRes);
+        PLGLDR__DisplayErrMessage("discord-rpc", "threadCreate failed", 0);
         return;
     }
-    svcCloseHandle(thread);
 }
