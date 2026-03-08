@@ -9,8 +9,31 @@ permissions:
   contents: write
 
 jobs:
+  # ── Create GitHub Release (once) ────────────────────────────────────────────
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history required by git-cliff
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.cliff.outputs.content }}
+
   # ── Plugin 3DS (.3gx) ───────────────────────────────────────────────────────
   build-plugin:
+    needs: create-release
     uses: ./.github/workflows/build-3gx.yml
     secrets:
       DRPC_SERVER_WS_URL: ${{ secrets.DRPC_SERVER_WS_URL }}
@@ -18,7 +41,7 @@ jobs:
 
   # ── PC client (Windows / macOS / Linux) ────────────────────────────────────
   build-client:
-    needs: build-plugin
+    needs: create-release
     strategy:
       matrix:
         include:
@@ -59,4 +82,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: client/dist/${{ matrix.asset_name }}
-          generate_release_notes: true
+
