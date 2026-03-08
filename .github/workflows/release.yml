@@ -72,6 +72,8 @@ jobs:
 
       - name: Build
         working-directory: client
+        env:
+          BUILD_DRPC_SERVER_WS_URL: ${{ secrets.DRPC_SERVER_WS_URL }}
         run: pyinstaller client.spec
 
       - name: Rename artifact
