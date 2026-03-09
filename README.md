@@ -1,6 +1,7 @@
 # Luma3DS Plugin — Discord RPC
 
-Show your current 3DS game as a Discord Rich Presence status — automatically, in real time.
+Show your current 3DS game as a Discord Rich Presence status — automatically, in real time.  
+**Multi-user ready**: every player gets their own isolated Discord integration.
 
 ![Discord RPC preview](https://img.shields.io/badge/Discord-Rich%20Presence-5865F2?logo=discord&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
@@ -11,208 +12,142 @@ Show your current 3DS game as a Discord Rich Presence status — automatically, 
 ## How it works
 
 ```
-3DS (Luma3DS plugin) ──UDP──▶ server ──WebSocket──▶ client ──▶ Discord RPC
+3DS plugin (UDP) ──► bridge server ──► PC client (WebSocket) ──► Discord RPC
+                           │
+                     HTTP API (:8766)
+                     POST /token
+                     GET  /plugin/build
+                     GET  /client/release
 ```
 
-1. The `.3gx` plugin runs in the background on your 3DS and sends UDP packets containing the current title ID.
-2. The server resolves the game name and icon via [api.nlib.cc](https://api.nlib.cc) and broadcasts it over WebSocket.
-3. The PC client receives the game info and updates your Discord status.
+Each user has a **unique token** provisioned at first install:
+
+1. `drpc install` calls `POST /token` → server returns a secret token.
+2. The server builds a personalised `.3gx` plugin with that token baked in (`GET /plugin/build`).
+3. The `.3gx` is downloaded and you copy it to your 3DS SD card.
+4. A background service starts on your PC and connects to the server using your token.
+5. The 3DS plugin sends UDP packets containing your token + current title ID.
+6. The server routes each packet **only** to the matching PC client → your Discord only.
 
 Protocol details: [`docs/protocol-v1.md`](docs/protocol-v1.md).
 
 ---
 
 > **Compatibility note**
-> The current network-enabled plugin may crash on some titles due to `UsePrivateMemory: true`, which is currently required for UDP communication.
-> 
-> Known compatibility reports are tracked here: [#2](https://github.com/etsukow/Luma3DS-Plugin-DiscordRPC/issues/2#issue-4044166912).
+> The plugin may crash on some titles due to `UsePrivateMemory: true`.
+> Known compatibility reports: [#2](https://github.com/etsukow/Luma3DS-Plugin-DiscordRPC/issues/2).
+
+---
 
 ## Requirements
 
-**To use:**
-- A 3DS with **custom firmware (Luma3DS)**
+- A 3DS with **Luma3DS custom firmware**
 - **Discord desktop app** running on your PC (web app not supported)
 - PC running **Windows, macOS, or Linux**
 
-**To build / run from source:**
-- **Docker** — to compile the `.3gx` plugin
-- **Python 3.11+** — to run the server and client from source
+---
+
+## Quick start (recommended)
+
+### 1. Download and install the `drpc` client
+
+Download the latest `drpc` binary for your OS from the [Releases](https://github.com/etsukow/Luma3DS-Plugin-DiscordRPC/releases/latest) page, then run:
+
+```sh
+# First-time setup (provisions your token, downloads your plugin, installs service)
+drpc install
+```
+
+This will:
+- Request your unique token from the server
+- Download your personalised `discord-rpc.3gx` plugin (stored in your config directory)
+- Install and start a background service that keeps your Discord up to date
+
+### 2. Copy the plugin to your 3DS SD card
+
+```
+# Global fallback (all games)
+SD:/luma/plugins/default/discord-rpc.3gx
+
+# Or per-game (replace 00040000001B5000 with the title ID)
+SD:/luma/plugins/00040000001B5000/discord-rpc.3gx
+```
+
+The plugin file path is printed at the end of `drpc install`.
+
+### 3. Enable the plugin on your 3DS
+
+Hold **SELECT** while booting a game to open the Luma plugin menu and enable the plugin.
+
+That's it — your Discord status will update automatically whenever you play.
 
 ---
 
-## Quick start
-
-### 1. Install the plugin on your 3DS
-
-Download the latest `default.3gx` from the [Releases](https://github.com/etsukow/Luma3DS-Plugin-DiscordRPC/releases/latest) page and copy it to your SD card:
+## `drpc` CLI reference
 
 ```
-SD:/luma/plugins/default.3gx
+drpc install      # First-run: provision token, download plugin, install service
+drpc uninstall    # Remove the background service
+drpc update       # Check for client and plugin updates
+drpc plugin       # Re-download your personalised .3gx (e.g. after a server update)
+drpc status       # Print current config and masked token
+drpc version      # Print client version
 ```
-
-Enable the plugin loader in Luma3DS settings (hold **SELECT** on boot) and make sure **"Game patching"** is on.
-
-Enable the plugin loader in Rosalina menu (hold **L+DOWN+SELECT** once console booted) and make sure **Plugin Loader** is enabled.
-
-> The plugin runs automatically in the background whenever you launch a game.
 
 ---
 
-### 2. Install and start the client
+## Running the server (self-hosted)
 
-Download the executable for your platform from the [Releases](https://github.com/etsukow/Luma3DS-Plugin-DiscordRPC/releases/latest) page:
+```sh
+cd server
+pip install -r requirements.txt
 
-| Platform | File |
-|---|---|
-| Windows | `3DS-DiscordRPC-windows.exe` |
-| macOS | `3DS-DiscordRPC-macos` |
-| Linux | `3DS-DiscordRPC-linux` |
+# Expose the public UDP address so clients know where to point their 3DS:
+export DRPC_PUBLIC_UDP_HOST=1.2.3.4   # your server's public IP
 
-Place the executable anywhere on your machine and run it once:
-
-**Windows** — double-click `3DS-DiscordRPC-windows.exe`.
-
-**macOS** — right-click → Open (required to bypass Gatekeeper on first launch):
-```zsh
-chmod +x 3DS-DiscordRPC-macos
-./3DS-DiscordRPC-macos
+python main.py
 ```
 
-**Linux**:
-```bash
-chmod +x 3DS-DiscordRPC-linux
-./3DS-DiscordRPC-linux
-```
+The server listens on three ports:
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 5005 | UDP | Receives events from 3DS plugins |
+| 8765 | WebSocket | Streams presence updates to PC clients |
+| 8766 | HTTP | Token provisioning & plugin builds |
 
-On **first launch**, the client registers itself as a login item and starts running in the background automatically — no terminal stays open. From then on it starts with your PC at every login.
-
-The server URL and Discord application ID are compiled into the executable — no configuration needed.
-
-Launch a game on your 3DS — your Discord status will update automatically.
+All ports are configurable via environment variables (see [`docs/protocol-v1.md`](docs/protocol-v1.md)).
 
 ---
 
-## Running from source *(optional)*
+## Building from source
 
-> For developers or advanced users who want to run the server and client directly with Python.
+### PC client (Go)
 
-### 1. Configure
-
-```zsh
-cp .env.example .env
+```sh
+cd client-go
+go build -ldflags "-X main.Version=$(git describe --tags)" -o drpc ./cmd/drpc
 ```
 
-Edit `.env` — the only required values are:
+### 3DS plugin (requires Docker)
 
-```dotenv
-# Your PC's local IP (the 3DS must be able to reach it)
-DRPC_SERVER_WS_URL=wss://192.168.1.XX:8765
+The server builds personalised plugins on demand. To build manually:
 
-# Your Discord application ID — create one at developer.discord.com
-DRPC_DISCORD_APP_ID=your_app_id_here
+```sh
+# Token is injected at compile time
+DRPC_TOKEN=your_token DRPC_SERVER_WS_URL=ws://1.2.3.4:5005 \
+  docker compose run --rm builder
+# Output: default.3gx
 ```
 
-> `DRPC_SERVER_WS_URL` is used both to configure the client and to embed the server IP in the `.3gx` binary at build time.
+Or without Docker (requires devkitARM):
 
----
-
-### 2. Start the server
-
-```zsh
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r server/requirements.txt
-python server/main.py
+```sh
+export DEVKITARM=/path/to/devkitARM
+make DRPC_TOKEN=your_token DRPC_SERVER_WS_URL=ws://1.2.3.4:5005
 ```
-
-The server listens on:
-- **UDP `0.0.0.0:5005`** — receives packets from the 3DS plugin
-- **WebSocket `0.0.0.0:8765`** — broadcasts game info to clients
-
----
-
-### 3. Start the client
-
-```zsh
-source .venv/bin/activate
-pip install -r client/requirements.txt
-python client/main.py
-```
-
-
----
-
-## Building the plugin yourself *(optional)*
-
-> Only needed if you want to compile the `.3gx` with your own server IP embedded,
-> or if no pre-built binary is available for your version.
-
-Build the `.3gx` binary using Docker (no toolchain setup required):
-
-```zsh
-# Make sure DRPC_SERVER_WS_URL is set in .env with your PC's local IP
-docker compose run --rm builder
-```
-
-The compiled `default.3gx` will appear in the project root. Copy it to your SD card as described above.
-
----
-
-## Configuration reference
-
-All values can be set in `.env` or as environment variables (when running from source).
-
-> **For the pre-built executables**, `DRPC_SERVER_WS_URL` and `DRPC_DISCORD_APP_ID` are
-> compiled in at build time via GitHub secrets — no configuration file needed.
-
-### Runtime variables (from source only)
-
-| Variable | Default                | Description |
-|---|------------------------|---|
-| `DRPC_SERVER_WS_URL` | `wss://127.0.0.1:8765` | WebSocket URL of the server |
-| `UDP_PORT` | `5005`                 | UDP port the plugin sends to |
-| `DRPC_UDP_HOST` | `0.0.0.0`              | Server UDP bind address |
-| `DRPC_UDP_PORT` | `5005`                 | Server UDP bind port |
-| `DRPC_WS_HOST` | `0.0.0.0`              | Server WebSocket bind address |
-| `DRPC_WS_PORT` | `8765`                 | Server WebSocket bind port |
-| `DRPC_FALLBACK_ICON` | `nintendo_3ds`         | Icon key used when none is found for a title |
-| `DRPC_RPC_MIN_INTERVAL` | `15`                   | Minimum seconds between RPC updates (heartbeats) |
-| `DRPC_WATCHDOG_TIMEOUT_SEC` | `25`                   | Seconds without a heartbeat before RPC is cleared |
-| `DRPC_API_TIMEOUT_SEC` | `5.0`                  | Timeout for title info API requests |
-
----
-
-## TitleID mapping
-
-Some titles (updates, DLCs, regional variants) have a different TitleID than their base game and may not be found by the API. You can remap them in `server/tid_map.json`:
-
-```json
-{
-  "0004000000185A00": "0004000000164600"
-}
-```
-
-The server will resolve and display the canonical title instead.
-
----
-
-## Troubleshooting
-
-**Discord status not showing up**
-- Make sure the Discord **desktop app** is running (not the web version)
-- Go to Discord **Settings → Activity Privacy** and enable "Display current activity as a status message"
-- Check that `DRPC_SERVER_WS_URL` in `.env` matches your PC's local IP
-
-**No events received on the server**
-- Verify `DRPC_SERVER_WS_URL` in `.env` contains the right IP and rebuild the `.3gx`
-- Check that UDP port `5005` is not blocked by your firewall
-- Make sure the 3DS and your PC are on the same network
-
-**Plugin not loading**
-- Confirm the file is at `SD:/luma/plugins/default.3gx`
-- Make sure "Game patching" is enabled in Luma3DS settings (hold SELECT on boot)
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+[MIT](LICENSE)

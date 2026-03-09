@@ -46,6 +46,15 @@ class RPCClient:
         self._connected = False
         self._last_update = 0.0
 
+    def _disconnect(self) -> None:
+        if self._rpc:
+            try:
+                self._rpc.close()
+            except Exception:
+                pass
+        self._rpc = None
+        self._connected = False
+
     def _connect(self) -> bool:
         try:
             self._rpc = Presence(self._app_id)
@@ -55,8 +64,17 @@ class RPCClient:
             return True
         except Exception as exc:
             print(f"[{now_iso()}] Discord RPC connexion échouée : {exc}", flush=True)
-            self._connected = False
+            self._disconnect()
             return False
+
+    def _update_once(self, name: str, icon: str, start_time: int) -> None:
+        self._rpc.update(
+            details=name,
+            state="Nintendo 3DS",
+            large_image=icon if icon else self._fallback_icon,
+            large_text=name,
+            start=start_time,
+        )
 
     def update(self, name: str, icon: str, start_time: int, force: bool = False) -> None:
         if not force and time.monotonic() - self._last_update < self._min_interval_sec:
@@ -65,20 +83,23 @@ class RPCClient:
             if not self._connect():
                 return
         try:
-            self._rpc.update(
-                details=name,
-                state="Nintendo 3DS",
-                large_image=icon if icon else self._fallback_icon,
-                large_text=name,
-                start=start_time,
-            )
+            self._update_once(name, icon, start_time)
             self._last_update = time.monotonic()
             print(f"[{now_iso()}] RPC -> {name}", flush=True)
         except rpc_exc.InvalidID:
             print(f"[{now_iso()}] RPC : Application ID invalide.", flush=True)
         except Exception as exc:
             print(f"[{now_iso()}] RPC update échoué : {exc}", flush=True)
-            self._connected = False
+            self._disconnect()
+            if not self._connect():
+                return
+            try:
+                self._update_once(name, icon, start_time)
+                self._last_update = time.monotonic()
+                print(f"[{now_iso()}] RPC -> {name} (après reconnexion)", flush=True)
+            except Exception as retry_exc:
+                print(f"[{now_iso()}] RPC retry échoué : {retry_exc}", flush=True)
+                self._disconnect()
 
     def clear(self) -> None:
         if self._connected and self._rpc:
@@ -86,16 +107,11 @@ class RPCClient:
                 self._rpc.clear()
                 print(f"[{now_iso()}] RPC effacé (menu HOME)", flush=True)
             except Exception:
-                pass
+                self._disconnect()
         self._last_update = 0.0
 
     def close(self) -> None:
-        if self._rpc:
-            try:
-                self._rpc.close()
-            except Exception:
-                pass
-        self._connected = False
+        self._disconnect()
 
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -190,7 +206,6 @@ def main() -> int:
 
     print(f"[{now_iso()}] 3DS Discord RPC démarré", flush=True)
     print(f"[{now_iso()}] Serveur WS: {config.server_ws_url}", flush=True)
-    print(f"[{now_iso()}] Ctrl+C pour quitter", flush=True)
 
     run(config)
     return 0
