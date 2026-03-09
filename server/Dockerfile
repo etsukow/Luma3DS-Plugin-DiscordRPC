@@ -26,7 +26,9 @@ WORKDIR /app
 
 # Dépendances Python
 COPY requirements.txt ./
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/python -m pip install --no-cache-dir -r requirements.txt
 
 # Sources du serveur + fichiers de build plugin
 COPY main.py tid_map.json ./
@@ -35,6 +37,7 @@ COPY Includes/  Includes/
 COPY Makefile   3ds.ld discord-rpc.plgInfo ./
 
 ENV THREEGXTOOL=/usr/local/bin/3gxtool \
+    PATH=/opt/venv/bin:$PATH \
     DRPC_UDP_HOST=0.0.0.0 \
     DRPC_UDP_PORT=5005 \
     DRPC_WS_HOST=0.0.0.0 \
@@ -46,4 +49,3 @@ EXPOSE 5005/udp 8765 8766
 
 # Le serveur build le plugin en lançant make directement (pas docker-in-docker)
 CMD ["python3", "main.py"]
-
