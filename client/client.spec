@@ -12,6 +12,7 @@ a = Analysis(
         (".env.example", "."),
     ],
     hiddenimports=[
+        "certifi",
         "websocket",
         "pypresence",
         # Windows: winreg is a built-in but PyInstaller may miss it on cross-builds.

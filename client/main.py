@@ -14,11 +14,16 @@ from __future__ import annotations
 import datetime as dt
 import json
 import signal
+import ssl
 import sys
 import time
 from typing import Optional
 
 import websocket
+try:
+    import certifi
+except ImportError:
+    certifi = None
 from pypresence import Presence, exceptions as rpc_exc
 
 from config import ClientConfig, load_config
@@ -98,6 +103,12 @@ def run(config: ClientConfig) -> None:
     rpc = RPCClient(config.discord_app_id, config.fallback_icon, config.rpc_min_interval)
     game_start = 0
     last_name = ""
+    sslopt = None
+
+    if config.server_ws_url.startswith("wss://"):
+        sslopt = {"cert_reqs": ssl.CERT_REQUIRED}
+        if certifi is not None:
+            sslopt["ca_certs"] = certifi.where()
 
     def on_open(ws):
         print(f"[{now_iso()}] Connecté au serveur {config.server_ws_url} ✓", flush=True)
@@ -154,7 +165,7 @@ def run(config: ClientConfig) -> None:
             on_close=on_close,
             on_error=on_error,
         )
-        ws.run_forever(reconnect=5)
+        ws.run_forever(reconnect=5, sslopt=sslopt)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
