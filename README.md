@@ -22,6 +22,11 @@ Protocol details: [`docs/protocol-v1.md`](docs/protocol-v1.md).
 
 ---
 
+> **Compatibility note**
+> The current network-enabled plugin may crash on some titles due to `UsePrivateMemory: true`, which is currently required for UDP communication.
+> 
+> Known compatibility reports are tracked here: [#2](https://github.com/etsukow/Luma3DS-Plugin-DiscordRPC/issues/2#issue-4044166912).
+
 ## Requirements
 
 **To use:**
