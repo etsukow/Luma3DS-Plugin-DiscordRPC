@@ -13,3 +13,6 @@ crash_dump_*.dmp
 .env.local
 .env.*
 !.env.example
+client-tauri/node_modules/
+client-tauri/dist/
+client-tauri/src-tauri/target/
