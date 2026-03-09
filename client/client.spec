@@ -8,7 +8,7 @@ a = Analysis(
     pathex=["."],
     binaries=[],
     datas=[
-        # Bundle .env.example so the frozen app can reference default values.
+        # Bundle the sample env file so users can override baked-in defaults.
         (".env.example", "."),
     ],
     hiddenimports=[
@@ -50,4 +50,3 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
-

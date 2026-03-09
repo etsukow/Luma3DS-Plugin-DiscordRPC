@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict
 
-# ── Compile-time constants ────────────────────────────────────────────────────
-# DRPC_SERVER_WS_URL is baked in at PyInstaller build time via BUILD_DRPC_SERVER_WS_URL.
+# ── Build-time constants ──────────────────────────────────────────────────────
+# `build_constants.py` is committed with local defaults and overwritten in CI
+# before PyInstaller runs, so frozen builds embed the release endpoint.
+from build_constants import BUILT_IN_SERVER_WS_URL
+
 # DRPC_DISCORD_APP_ID is public and hardcoded.
-_BUILT_IN_SERVER_WS_URL = os.getenv("BUILD_DRPC_SERVER_WS_URL", "wss://127.0.0.1:8765")
 _DISCORD_APP_ID = "1480019559606911057"
 
 
@@ -67,9 +69,8 @@ def load_config() -> ClientConfig:
         rpc_min_interval = 1
 
     return ClientConfig(
-        server_ws_url=_pick("DRPC_SERVER_WS_URL", env_file_values, _BUILT_IN_SERVER_WS_URL),
+        server_ws_url=_pick("DRPC_SERVER_WS_URL", env_file_values, BUILT_IN_SERVER_WS_URL),
         discord_app_id=_DISCORD_APP_ID,
         fallback_icon=_pick("DRPC_FALLBACK_ICON", env_file_values, "nintendo_3ds"),
         rpc_min_interval=rpc_min_interval,
     )
-
