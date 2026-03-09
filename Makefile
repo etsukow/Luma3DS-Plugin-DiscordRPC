@@ -9,16 +9,22 @@ ifneq ("$(wildcard $(CURDIR)/.env)","")
 include $(CURDIR)/.env
 endif
 
-# Extract IP from DRPC_SERVER_WS_URL (wss://1.2.3.4:5005 -> 1.2.3.4)
+# Extract host from DRPC_SERVER_WS_URL (wss://api.etsukow.com or wss://1.2.3.4:5005 -> host part)
 DQ             := $(shell printf '"')
 _WS_URL_RAW    := $(strip $(DRPC_SERVER_WS_URL))
-_WS_URL_CLEAN  := $(subst $(DQ),,$(subst wss://,,$(subst wss://,,$(strip $(_WS_URL_RAW)))))
+# Strip surrounding quotes then strip wss:// or ws:// scheme
+_WS_URL_CLEAN  := $(subst $(DQ),,$(strip $(_WS_URL_RAW)))
+_WS_URL_CLEAN  := $(patsubst wss://%,%,$(patsubst ws://%,%,$(_WS_URL_CLEAN)))
+# Strip trailing path (everything after first /)
+_WS_URL_NOPATH := $(firstword $(subst /, ,$(_WS_URL_CLEAN)))
 # Strip port: keep everything before the last colon
-IP_PC_CLEAN    := $(firstword $(subst :, ,$(_WS_URL_CLEAN)))
+HOST_PC_CLEAN  := $(lastword $(subst @, ,$(firstword $(subst :, ,$(_WS_URL_NOPATH)) $(_WS_URL_NOPATH))))
+# Fallback for bracket-less host:port — take first token before ':'
+HOST_PC_CLEAN  := $(firstword $(subst :, ,$(_WS_URL_NOPATH)))
 UDP_PORT_RAW   := $(strip $(UDP_PORT))
 
-ifeq ($(IP_PC_CLEAN),)
-IP_PC_CLEAN := 127.0.0.1
+ifeq ($(HOST_PC_CLEAN),)
+HOST_PC_CLEAN := 127.0.0.1
 endif
 
 ifeq ($(UDP_PORT_RAW),)
@@ -47,7 +53,7 @@ CFLAGS      := -Os -mword-relocations \
                 $(ARCH)
 
 CFLAGS      += $(INCLUDE) -D__3DS__ \
-                -DIP_PC_STR=\"$(IP_PC_CLEAN)\" \
+                -DHOST_PC_STR=\"$(HOST_PC_CLEAN)\" \
                 -DUDP_PORT_NUM=$(UDP_PORT_RAW)
 
 CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++11

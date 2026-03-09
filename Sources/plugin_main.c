@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <malloc.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -14,8 +15,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#ifndef IP_PC_STR
-#define IP_PC_STR "127.0.0.1"
+#ifndef HOST_PC_STR
+#define HOST_PC_STR "127.0.0.1"
 #endif
 
 #ifndef UDP_PORT_NUM
@@ -50,6 +51,9 @@ static bool gRemoteConfigured = false;
 static bool gSocTemporarilyUnavailable = false;
 static u64 gNextSocRetryMs = 0;
 
+// Forward declaration (TryInitSoc is defined below, needed by ConfigureRemote for DNS).
+static bool TryInitSoc(void);
+
 static void ResetUdpSocket(void)
 {
     if (gUdpSocket >= 0)
@@ -64,22 +68,36 @@ static bool ConfigureRemote(void)
     if (gRemoteConfigured)
         return true;
 
+    // Try numeric IP first (fast path, no DNS).
+    struct in_addr numeric_addr;
+    if (inet_aton(HOST_PC_STR, &numeric_addr))
+    {
+        memset(&gRemoteAddr, 0, sizeof(gRemoteAddr));
+        gRemoteAddr.sin_family = AF_INET;
+        gRemoteAddr.sin_port = htons(UDP_PORT_NUM);
+        gRemoteAddr.sin_addr = numeric_addr;
+        gRemoteConfigured = true;
+        return true;
+    }
+
+    // Hostname: resolve via DNS (requires SOC to be up).
+    if (!TryInitSoc())
+        return false;
+
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    if (getaddrinfo(HOST_PC_STR, NULL, &hints, &res) != 0 || res == NULL)
+        return false;
+
     memset(&gRemoteAddr, 0, sizeof(gRemoteAddr));
-    gRemoteAddr.sin_family = AF_INET;
+    gRemoteAddr = *(struct sockaddr_in *)res->ai_addr;
     gRemoteAddr.sin_port = htons(UDP_PORT_NUM);
+    freeaddrinfo(res);
 
-    unsigned int a = 0;
-    unsigned int b = 0;
-    unsigned int c = 0;
-    unsigned int d = 0;
-
-    if (sscanf(IP_PC_STR, "%u.%u.%u.%u", &a, &b, &c, &d) != 4)
-        return false;
-
-    if (a > 255 || b > 255 || c > 255 || d > 255)
-        return false;
-
-    gRemoteAddr.sin_addr.s_addr = htonl((a << 24) | (b << 16) | (c << 8) | d);
     gRemoteConfigured = true;
     return true;
 }

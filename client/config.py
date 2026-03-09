@@ -48,7 +48,14 @@ def _pick(name: str, env_file_values: Dict[str, str], default: str) -> str:
 
 
 def load_config() -> ClientConfig:
-    env_file_path = Path(os.getenv("DRPC_CLIENT_ENV_FILE", ".env"))
+    _default_env = Path(os.getenv("DRPC_CLIENT_ENV_FILE", ".env"))
+    # Also check next to this script (useful when running from a different cwd).
+    _script_env = Path(__file__).parent / ".env"
+    _root_env = Path(__file__).parent.parent / ".env"
+    env_file_path = next(
+        (p for p in (_default_env, _script_env, _root_env) if p.exists()),
+        _default_env,
+    )
     env_file_values = _parse_env_file(env_file_path)
 
     rpc_min_interval_raw = _pick("DRPC_RPC_MIN_INTERVAL", env_file_values, "15")
