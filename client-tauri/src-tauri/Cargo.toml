@@ -1,0 +1,34 @@
+[package]
+name = "app"
+version = "0.2.0"
+description = "3DS Discord RPC"
+authors = ["Etsukow"]
+license = "MIT"
+repository = "https://github.com/etsukow/Luma3DS-Plugin-DiscordRPC"
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+dirs = "6"
+anyhow = "1"
+discord-rich-presence = "0.2"
