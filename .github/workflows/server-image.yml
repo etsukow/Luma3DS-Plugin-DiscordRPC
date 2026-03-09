@@ -2,7 +2,7 @@ name: Build & push server image
 
 on:
   push:
-    branches: [master, main]
+    branches: ["**"]
     paths:
       - "server/**"
       - ".github/workflows/server-image.yml"
