@@ -1,4 +1,4 @@
-name: Build & Release
+name: Release
 
 on:
   push:
@@ -12,11 +12,13 @@ permissions:
   packages: write
 
 jobs:
-  # ── Create GitHub Release ────────────────────────────────────────────────────
   create-release:
     runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -32,78 +34,86 @@ jobs:
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
+        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.cliff.outputs.content }}
 
-  # ── PC client Go (Windows / macOS / Linux) ───────────────────────────────────
-  build-client:
+  build-tauri:
     needs: create-release
-    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - goos: windows
-            goarch: amd64
-            asset_name: drpc-windows-amd64.exe
-          - goos: darwin
-            goarch: amd64
-            asset_name: drpc-macos-amd64
-          - goos: darwin
-            goarch: arm64
-            asset_name: drpc-macos-arm64
-          - goos: linux
-            goarch: amd64
-            asset_name: drpc-linux-amd64
-          - goos: linux
-            goarch: arm64
-            asset_name: drpc-linux-arm64
-
+          - platform: 'macos-13'
+            target: 'x86_64-apple-darwin'
+          - platform: 'macos-14'
+            target: 'aarch64-apple-darwin'
+          - platform: 'ubuntu-22.04'
+            target: 'x86_64-unknown-linux-gnu'
+          - platform: 'windows-latest'
+            target: 'x86_64-pc-windows-msvc'
+    runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: client-go/go.mod
-
-      - name: Build
-        working-directory: client-go
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
-          go build \
-            -ldflags "-X main.Version=${{ github.ref_name }}" \
-            -o ../dist/${{ matrix.asset_name }} \
-            ./cmd/drpc
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
 
-      - name: Upload to Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          files: dist/${{ matrix.asset_name }}
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client-tauri/package-lock.json
 
-  # ── Server Docker image ───────────────────────────────────────────────────────
-  build-server-image:
+      - name: Install frontend dependencies
+        working-directory: client-tauri
+        run: npm ci
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build Tauri bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: client-tauri
+          args: --target ${{ matrix.target }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+
+  publish-server-image:
     needs: create-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Normalize image namespace
+      - name: Normalize image owner
         id: image
         run: echo "owner_lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to ghcr.io
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
+      - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -113,10 +123,10 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
             type=raw,value=test-${{ github.ref_name }},enable=${{ startsWith(github.ref, 'refs/heads/test') }}
 
-      - name: Set up Docker Buildx
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: ./server
