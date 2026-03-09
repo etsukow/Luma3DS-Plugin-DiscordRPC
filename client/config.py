@@ -8,7 +8,7 @@ from typing import Dict
 # ── Compile-time constants ────────────────────────────────────────────────────
 # DRPC_SERVER_WS_URL is baked in at PyInstaller build time via BUILD_DRPC_SERVER_WS_URL.
 # DRPC_DISCORD_APP_ID is public and hardcoded.
-_BUILT_IN_SERVER_WS_URL = os.getenv("BUILD_DRPC_SERVER_WS_URL", "ws://127.0.0.1:8765")
+_BUILT_IN_SERVER_WS_URL = os.getenv("BUILD_DRPC_SERVER_WS_URL", "wss://127.0.0.1:8765")
 _DISCORD_APP_ID = "1480019559606911057"
 
 

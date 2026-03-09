@@ -39,7 +39,7 @@ jobs:
           elif [ -f .env.example ]; then
             cp .env.example .env
           else
-            printf 'DRPC_SERVER_WS_URL="ws://127.0.0.1:8765"\nUDP_PORT=5005\n' > .env
+            printf 'DRPC_SERVER_WS_URL="wss://127.0.0.1:8765"\nUDP_PORT=5005\n' > .env
           fi
         env:
           UDP_PORT: ${{ secrets.UDP_PORT }}

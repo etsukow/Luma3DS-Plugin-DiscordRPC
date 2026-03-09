@@ -9,10 +9,10 @@ ifneq ("$(wildcard $(CURDIR)/.env)","")
 include $(CURDIR)/.env
 endif
 
-# Extract IP from DRPC_SERVER_WS_URL (ws://1.2.3.4:5005 -> 1.2.3.4)
+# Extract IP from DRPC_SERVER_WS_URL (wss://1.2.3.4:5005 -> 1.2.3.4)
 DQ             := $(shell printf '"')
 _WS_URL_RAW    := $(strip $(DRPC_SERVER_WS_URL))
-_WS_URL_CLEAN  := $(subst $(DQ),,$(subst ws://,,$(subst wss://,,$(strip $(_WS_URL_RAW)))))
+_WS_URL_CLEAN  := $(subst $(DQ),,$(subst wss://,,$(subst wss://,,$(strip $(_WS_URL_RAW)))))
 # Strip port: keep everything before the last colon
 IP_PC_CLEAN    := $(firstword $(subst :, ,$(_WS_URL_CLEAN)))
 UDP_PORT_RAW   := $(strip $(UDP_PORT))

@@ -101,7 +101,7 @@ Edit `.env` — the only required values are:
 
 ```dotenv
 # Your PC's local IP (the 3DS must be able to reach it)
-DRPC_SERVER_WS_URL=ws://192.168.1.XX:8765
+DRPC_SERVER_WS_URL=wss://192.168.1.XX:8765
 
 # Your Discord application ID — create one at developer.discord.com
 DRPC_DISCORD_APP_ID=your_app_id_here
@@ -161,18 +161,18 @@ All values can be set in `.env` or as environment variables (when running from s
 
 ### Runtime variables (from source only)
 
-| Variable | Default | Description |
-|---|---|---|
-| `DRPC_SERVER_WS_URL` | `ws://127.0.0.1:8765` | WebSocket URL of the server |
-| `UDP_PORT` | `5005` | UDP port the plugin sends to |
-| `DRPC_UDP_HOST` | `0.0.0.0` | Server UDP bind address |
-| `DRPC_UDP_PORT` | `5005` | Server UDP bind port |
-| `DRPC_WS_HOST` | `0.0.0.0` | Server WebSocket bind address |
-| `DRPC_WS_PORT` | `8765` | Server WebSocket bind port |
-| `DRPC_FALLBACK_ICON` | `nintendo_3ds` | Icon key used when none is found for a title |
-| `DRPC_RPC_MIN_INTERVAL` | `15` | Minimum seconds between RPC updates (heartbeats) |
-| `DRPC_WATCHDOG_TIMEOUT_SEC` | `25` | Seconds without a heartbeat before RPC is cleared |
-| `DRPC_API_TIMEOUT_SEC` | `5.0` | Timeout for title info API requests |
+| Variable | Default                | Description |
+|---|------------------------|---|
+| `DRPC_SERVER_WS_URL` | `wss://127.0.0.1:8765` | WebSocket URL of the server |
+| `UDP_PORT` | `5005`                 | UDP port the plugin sends to |
+| `DRPC_UDP_HOST` | `0.0.0.0`              | Server UDP bind address |
+| `DRPC_UDP_PORT` | `5005`                 | Server UDP bind port |
+| `DRPC_WS_HOST` | `0.0.0.0`              | Server WebSocket bind address |
+| `DRPC_WS_PORT` | `8765`                 | Server WebSocket bind port |
+| `DRPC_FALLBACK_ICON` | `nintendo_3ds`         | Icon key used when none is found for a title |
+| `DRPC_RPC_MIN_INTERVAL` | `15`                   | Minimum seconds between RPC updates (heartbeats) |
+| `DRPC_WATCHDOG_TIMEOUT_SEC` | `25`                   | Seconds without a heartbeat before RPC is cleared |
+| `DRPC_API_TIMEOUT_SEC` | `5.0`                  | Timeout for title info API requests |
 
 ---
 
