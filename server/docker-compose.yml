@@ -14,4 +14,3 @@ services:
       - DRPC_SERVER_WS_URL=${DRPC_SERVER_WS_URL:-}
     command: >-
       sh -lc "make clean all THREEGXTOOL=/usr/local/bin/3gxtool"
-

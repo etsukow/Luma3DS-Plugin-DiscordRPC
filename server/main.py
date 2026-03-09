@@ -2,12 +2,11 @@
 """Bridge server for Luma3DS-Plugin-DiscordRPC — multi-user edition.
 
 Flow:
-  3DS plugin (UDP)  ──► server ──► PC clients (WebSocket, auth by token)
+  3DS plugin (UDP)  ──► server ──► desktop app (WebSocket, auth by token)
 
 Endpoints:
   POST /token           — provision a unique token for a new client
   GET  /plugin/build    — build & return a personalised .3gx for ?token=<tok>
-  GET  /client/release  — latest client binary metadata for auto-update
 
 UDP payload  (plugin ──► server):
   {"schemaVersion":1,"event":"plugin_start","titleId":"…","token":"…"}
@@ -23,6 +22,7 @@ import datetime as dt
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
@@ -43,14 +43,10 @@ API_TIMEOUT_SEC      = float(os.getenv("DRPC_API_TIMEOUT_SEC", "5.0"))
 WATCHDOG_TIMEOUT_SEC = float(os.getenv("DRPC_WATCHDOG_TIMEOUT_SEC", "25.0"))
 # Public UDP hostname reported to new clients so the 3DS knows where to send.
 PUBLIC_UDP_HOST      = os.getenv("DRPC_PUBLIC_UDP_HOST", "127.0.0.1")
-# docker-compose.yml used to build personalised plugins on demand.
 DOCKER_COMPOSE_FILE  = os.getenv(
     "DRPC_DOCKER_COMPOSE_FILE",
-    str(Path(__file__).parent.parent / "docker-compose.yml"),
+    str(Path(__file__).parent / "docker-compose.yml"),
 )
-# Optional JSON file with client binary release info.
-CLIENT_RELEASE_FILE  = os.getenv("DRPC_CLIENT_RELEASE_FILE", "")
-
 _TID_MAP_PATH = os.path.join(os.path.dirname(__file__), "tid_map.json")
 
 
@@ -339,12 +335,6 @@ async def http_handler(registry: Registry,
             params = dict(p.split("=", 1) for p in qs.split("&") if "=" in p)
             await _serve_plugin(params.get("token", ""), writer)
 
-        elif method == "GET" and path_qs.startswith("/client/release"):
-            if CLIENT_RELEASE_FILE and Path(CLIENT_RELEASE_FILE).exists():
-                _respond(writer, 200, "OK", Path(CLIENT_RELEASE_FILE).read_bytes())
-            else:
-                _respond(writer, 204, "No Content", b"")
-
         else:
             _respond(writer, 404, "Not Found", b'{"error":"not found"}')
 
@@ -372,35 +362,38 @@ async def _serve_plugin(token: str, writer: asyncio.StreamWriter) -> None:
 
     print(f"[{now_iso()}] plugin build request token={token[:8]}…", flush=True)
 
-    # Build dir = directory containing main.py (all sources are co-located in the image)
     build_dir = Path(__file__).parent
 
-    # Check devkitARM is available
-    devkitarm = os.getenv("DEVKITARM", "/opt/devkitpro/devkitARM")
-    if not Path(devkitarm).exists():
+    compose_file = Path(DOCKER_COMPOSE_FILE)
+    if not compose_file.exists():
         _respond(writer, 503, "Service Unavailable",
-                 b'{"error":"build environment not configured (devkitARM missing)"}')
+                 b'{"error":"build environment not configured (missing docker compose file)"}')
+        return
+    if shutil.which("docker") is None:
+        _respond(writer, 503, "Service Unavailable",
+                 b'{"error":"build environment not configured (docker missing)"}')
         return
 
     env = {
         **os.environ,
-        "DEVKITARM": devkitarm,
-        "DEVKITPRO": os.getenv("DEVKITPRO", "/opt/devkitpro"),
         "DRPC_TOKEN": token,
         "DRPC_SERVER_WS_URL": f"ws://{PUBLIC_UDP_HOST}:{UDP_PORT}",
-        "PATH": os.environ.get("PATH", "") + f":{devkitarm}/bin:/opt/devkitpro/tools/bin",
+        "PATH": os.environ.get("PATH", ""),
     }
+    cmd = ["docker", "compose", "-f", str(compose_file), "run", "--rm", "builder"]
+    cwd = str(compose_file.parent)
+
     try:
         result = await asyncio.to_thread(
             subprocess.run,
-            ["make", "re", f"THREEGXTOOL={os.getenv('THREEGXTOOL', '3gxtool')}"],
-            capture_output=True, cwd=str(build_dir), env=env, timeout=120,
+            cmd,
+            capture_output=True, cwd=cwd, env=env, timeout=120,
         )
     except subprocess.TimeoutExpired:
         _respond(writer, 504, "Gateway Timeout", b'{"error":"build timed out"}')
         return
     except FileNotFoundError:
-        _respond(writer, 503, "Service Unavailable", b'{"error":"make not found"}')
+        _respond(writer, 503, "Service Unavailable", b'{"error":"docker not found"}')
         return
 
     if result.returncode != 0:
