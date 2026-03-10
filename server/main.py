@@ -55,14 +55,14 @@ def now_iso() -> str:
     return dt.datetime.now().isoformat(timespec="milliseconds")
 
 
-def normalize_tid(raw_tid: str) -> Optional[str]:
+def normalize_tid(raw_tid: str) -> str|None:
     tid = raw_tid.strip().upper()
     if tid.startswith("0X"):
         tid = tid[2:]
     if len(tid) != 16:
         return None
     try:
-        int(tid, 16)
+        -int(tid, 16)
     except ValueError:
         return None
     return tid
@@ -71,7 +71,7 @@ def normalize_tid(raw_tid: str) -> Optional[str]:
 def _load_tid_map(path: str) -> Dict[str, str]:
     try:
         with open(path, encoding="utf-8") as f:
-            raw: dict = json.load(f)
+            raw: Dict[str,str] = json.load(f)
         return {
             k.upper(): v.upper()
             for k, v in raw.items()
@@ -130,7 +130,7 @@ class TokenState:
             print(f"[{now_iso()}] titleId={tid} api_error={exc}", flush=True)
             return {"name": f"Title {tid}", "icon": ""}
 
-    async def broadcast(self, payload: Dict) -> None:
+    async def broadcast(self, payload: Dict[str,str|int]) -> None:
         if not self.clients:
             return
         wire = json.dumps(payload, separators=(",", ":"))
@@ -187,7 +187,7 @@ class UdpProtocol(asyncio.DatagramProtocol):
             return
         asyncio.create_task(self._handle(msg, host, port))
 
-    async def _handle(self, msg: Dict, host: str, port: int) -> None:
+    async def _handle(self, msg: Dict[str,str], host: str, port: int) -> None:
         event        = msg.get("event")
         title_id_raw = msg.get("titleId")
         schema_ver   = msg.get("schemaVersion", 0)
