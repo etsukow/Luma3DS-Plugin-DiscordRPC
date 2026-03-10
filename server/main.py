@@ -27,7 +27,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from websockets.asyncio.server import ServerConnection, serve as ws_serve
 
@@ -55,14 +55,14 @@ def now_iso() -> str:
     return dt.datetime.now().isoformat(timespec="milliseconds")
 
 
-def normalize_tid(raw_tid: str) -> str|None:
+def normalize_tid(raw_tid: str) -> str | None:
     tid = raw_tid.strip().upper()
     if tid.startswith("0X"):
         tid = tid[2:]
     if len(tid) != 16:
         return None
     try:
-        -int(tid, 16)
+        int(tid, 16)
     except ValueError:
         return None
     return tid
@@ -71,7 +71,7 @@ def normalize_tid(raw_tid: str) -> str|None:
 def _load_tid_map(path: str) -> Dict[str, str]:
     try:
         with open(path, encoding="utf-8") as f:
-            raw: Dict[str,str] = json.load(f)
+            raw: Dict[str, str] = json.load(f)
         return {
             k.upper(): v.upper()
             for k, v in raw.items()
@@ -130,7 +130,7 @@ class TokenState:
             print(f"[{now_iso()}] titleId={tid} api_error={exc}", flush=True)
             return {"name": f"Title {tid}", "icon": ""}
 
-    async def broadcast(self, payload: Dict[str,str|int]) -> None:
+    async def broadcast(self, payload: Dict[str, str | int]) -> None:
         if not self.clients:
             return
         wire = json.dumps(payload, separators=(",", ":"))
@@ -166,7 +166,7 @@ class Registry:
             self._states[token] = TokenState(token)
         return self._states[token]
 
-    def all_states(self):
+    def all_states(self) -> list[TokenState]:
         return list(self._states.values())
 
 
@@ -187,11 +187,11 @@ class UdpProtocol(asyncio.DatagramProtocol):
             return
         asyncio.create_task(self._handle(msg, host, port))
 
-    async def _handle(self, msg: Dict[str,str], host: str, port: int) -> None:
-        event        = msg.get("event")
+    async def _handle(self, msg: Dict[str, Any], host: str, port: int) -> None:
+        event = msg.get("event")
         title_id_raw = msg.get("titleId")
-        schema_ver   = msg.get("schemaVersion", 0)
-        tok          = msg.get("token", "")
+        schema_ver = msg.get("schemaVersion", 0)
+        tok = msg.get("token", "")
 
         if not isinstance(event, str) or not isinstance(title_id_raw, str):
             return
@@ -216,7 +216,7 @@ class UdpProtocol(asyncio.DatagramProtocol):
         state.last_title_id = canonical_tid
 
         resolved = await state.resolve_title(canonical_tid)
-        payload = {
+        payload: Dict[str, str | int] = {
             "type": "presence",
             "schemaVersion": schema_ver,
             "event": event,
