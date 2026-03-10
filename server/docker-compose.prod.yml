@@ -1,0 +1,12 @@
+services:
+  server:
+    image: ghcr.io/etsukow/luma3ds-drpc-server:latest
+    restart: unless-stopped
+    ports:
+      - "5005:5005/udp"
+      - "8765:8765"
+      - "8766:8766"
+    environment:
+      DRPC_PUBLIC_UDP_HOST: ${DRPC_PUBLIC_UDP_HOST}
+      DRPC_WATCHDOG_TIMEOUT_SEC: ${DRPC_WATCHDOG_TIMEOUT_SEC:-25}
+

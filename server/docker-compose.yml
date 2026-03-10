@@ -1,0 +1,16 @@
+services:
+  builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        THREEGXTOOL_REPO: ${THREEGXTOOL_REPO:-https://gitlab.com/thepixellizeross/3gxtool}
+        THREEGXTOOL_REF: ${THREEGXTOOL_REF:-master}
+    working_dir: /work
+    volumes:
+      - .:/work
+    environment:
+      - DRPC_TOKEN=${DRPC_TOKEN:-}
+      - DRPC_SERVER_WS_URL=${DRPC_SERVER_WS_URL:-}
+    command: >-
+      sh -lc "make clean all THREEGXTOOL=/usr/local/bin/3gxtool"
