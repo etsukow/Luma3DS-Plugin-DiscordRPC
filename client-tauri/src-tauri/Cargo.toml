@@ -32,3 +32,5 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 dirs = "6"
 anyhow = "1"
 discord-rich-presence = "0.2"
+base64 = "0.22"
+tauri-plugin-autostart = "2"

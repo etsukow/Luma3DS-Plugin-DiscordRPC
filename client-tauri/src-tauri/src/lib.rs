@@ -11,16 +11,32 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
+use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .manage(Arc::new(Mutex::new(AppState::default())) as SharedState)
         .setup(|app| {
+            // Start hidden when launched via autostart
+            if std::env::args().any(|a| a == "--hidden") {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.hide();
+                }
+            }
+
             // System tray
             let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -73,6 +89,7 @@ pub fn run() {
             commands::start,
             commands::stop,
             commands::get_plugin_path,
+            commands::fetch_icon,
         ])
         .on_window_event(|window, event| {
             // Hide to tray instead of closing

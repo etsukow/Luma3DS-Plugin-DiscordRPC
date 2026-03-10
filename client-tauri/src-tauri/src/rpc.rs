@@ -33,7 +33,10 @@ impl RpcClient {
 
     fn emit_status(&self, connected: bool, message: &str) {
         if let Some(ref tx) = self.status_tx {
-            let _ = tx.send(RpcStatus { connected, message: message.to_string() });
+            let _ = tx.send(RpcStatus {
+                connected,
+                message: message.to_string(),
+            });
         }
     }
 
@@ -68,7 +71,6 @@ impl RpcClient {
         }
     }
 
-
     pub fn update(&mut self, name: &str, icon: &str) {
         if !self.ensure_connected() {
             return;
@@ -82,7 +84,11 @@ impl RpcClient {
             self.last_game = Some(name.to_string());
         }
 
-        let large_image = if icon.is_empty() { "nintendo_3ds" } else { icon };
+        let large_image = if icon.is_empty() {
+            "nintendo_3ds"
+        } else {
+            icon
+        };
 
         let act = activity::Activity::new()
             .details(name)

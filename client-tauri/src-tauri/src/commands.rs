@@ -1,4 +1,5 @@
 use crate::{api, config, rpc, rpc::RpcClient, ws};
+use base64::Engine;
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
@@ -50,9 +51,17 @@ pub async fn get_live_status(state: tauri::State<'_, SharedState>) -> Result<Liv
     let s = state.lock().await;
     Ok(LiveStatus {
         ws_connected: s.ws_connected,
-        ws_message: if s.ws_connected { "Connected".into() } else { "Disconnected".into() },
+        ws_message: if s.ws_connected {
+            "Connected".into()
+        } else {
+            "Disconnected".into()
+        },
         rpc_connected: s.rpc_connected,
-        rpc_message: if s.rpc_connected { "Discord connected".into() } else { "Discord not available".into() },
+        rpc_message: if s.rpc_connected {
+            "Discord connected".into()
+        } else {
+            "Discord not available".into()
+        },
         current_game: s.current_game.clone(),
     })
 }
@@ -93,9 +102,20 @@ pub async fn install(app: AppHandle, state: tauri::State<'_, SharedState>) -> Re
             .map_err(|e| e.to_string())?;
         cfg.token = Some(resp.token.clone());
         config::save(&cfg).map_err(|e| e.to_string())?;
-        emit_log(&app, "success", &format!("Token received: {}", mask_token(&resp.token)));
+        emit_log(
+            &app,
+            "success",
+            &format!("Token received: {}", mask_token(&resp.token)),
+        );
     } else {
-        emit_log(&app, "info", &format!("Existing token: {}", mask_token(cfg.token.as_ref().unwrap())));
+        emit_log(
+            &app,
+            "info",
+            &format!(
+                "Existing token: {}",
+                mask_token(cfg.token.as_ref().unwrap())
+            ),
+        );
     }
 
     // Step 2 — download plugin
@@ -105,15 +125,22 @@ pub async fn install(app: AppHandle, state: tauri::State<'_, SharedState>) -> Re
     let version = api::download_plugin(&cfg.server_api, &token, &plugin_path)
         .await
         .map_err(|e| e.to_string())?;
-    emit_log(&app, "success", &format!("Plugin saved: {} (v{})", plugin_path.display(), version));
+    emit_log(
+        &app,
+        "success",
+        &format!("Plugin saved: {} (v{})", plugin_path.display(), version),
+    );
 
     // Step 3 — start daemon
     emit_log(&app, "info", "Starting Discord RPC daemon…");
     start_daemon(app.clone(), state.inner().clone(), cfg).await?;
     emit_log(&app, "success", "Installation complete ✅");
 
-    app.emit("install_complete", plugin_path.to_string_lossy().to_string())
-        .map_err(|e| e.to_string())?;
+    app.emit(
+        "install_complete",
+        plugin_path.to_string_lossy().to_string(),
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -130,7 +157,8 @@ pub async fn uninstall(app: AppHandle, state: tauri::State<'_, SharedState>) -> 
     let _ = std::fs::remove_file(&plugin_path);
 
     emit_log(&app, "info", "Uninstalled — token and plugin removed");
-    app.emit("uninstall_complete", ()).map_err(|e| e.to_string())?;
+    app.emit("uninstall_complete", ())
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -161,6 +189,23 @@ pub async fn start(app: AppHandle, state: tauri::State<'_, SharedState>) -> Resu
 pub async fn stop(state: tauri::State<'_, SharedState>) -> Result<(), String> {
     stop_daemon(state.inner().clone()).await;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn fetch_icon(url: String) -> Result<String, String> {
+    if url.is_empty() {
+        return Ok(String::new());
+    }
+    let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .to_string();
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", content_type, b64))
 }
 
 #[tauri::command]
@@ -201,8 +246,7 @@ pub async fn start_daemon(
     // RPC status channel
     let (rpc_status_tx, mut rpc_status_rx) = tokio::sync::broadcast::channel::<rpc::RpcStatus>(8);
 
-    let mut rpc = RpcClient::new(&cfg.discord_app_id)
-        .with_status_tx(rpc_status_tx.clone());
+    let mut rpc = RpcClient::new(&cfg.discord_app_id).with_status_tx(rpc_status_tx.clone());
 
     // Try connecting to Discord immediately so the UI shows the real status.
     rpc.try_connect();
@@ -217,6 +261,7 @@ pub async fn start_daemon(
     let app_clone = app.clone();
     let state_clone = state.clone();
     tokio::spawn(async move {
+        let mut rpc_reconnect_tick = tokio::time::interval(tokio::time::Duration::from_secs(5));
         loop {
             tokio::select! {
                 Ok(evt) = event_rx.recv() => {
@@ -255,6 +300,13 @@ pub async fn start_daemon(
                     }
                     let _ = app_clone.emit("rpc_status", &rpc_status);
                 }
+                _ = rpc_reconnect_tick.tick() => {
+                    let mut s = state_clone.lock().await;
+                    if let (Some(game), Some(rpc)) = (s.current_game.clone(), s.rpc.as_mut()) {
+                        // Keep activity alive and detect stale/broken IPC even when the game doesn't change.
+                        rpc.update(&game.name, &game.icon);
+                    }
+                }
                 else => break,
             }
         }
@@ -291,8 +343,11 @@ struct LogPayload {
 
 fn emit_log(app: &AppHandle, level: &str, message: &str) {
     log::info!("[drpc] {}", message);
-    let _ = app.emit("log", LogPayload {
-        level: level.to_string(),
-        message: message.to_string(),
-    });
+    let _ = app.emit(
+        "log",
+        LogPayload {
+            level: level.to_string(),
+            message: message.to_string(),
+        },
+    );
 }
