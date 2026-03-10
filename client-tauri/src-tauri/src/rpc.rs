@@ -49,23 +49,17 @@ impl RpcClient {
         if self.inner.is_some() {
             return true;
         }
-        match DiscordIpcClient::new(&self.app_id) {
-            Ok(mut client) => match client.connect() {
-                Ok(_) => {
-                    log::info!("[rpc] Discord IPC connected");
-                    self.inner = Some(client);
-                    self.emit_status(true, "Discord connected");
-                    true
-                }
-                Err(e) => {
-                    log::warn!("[rpc] connect failed: {}", e);
-                    self.emit_status(false, &format!("Discord not available: {}", e));
-                    false
-                }
-            },
+        let mut client = DiscordIpcClient::new(&self.app_id);
+        match client.connect() {
+            Ok(_) => {
+                log::info!("[rpc] Discord IPC connected");
+                self.inner = Some(client);
+                self.emit_status(true, "Discord connected");
+                true
+            }
             Err(e) => {
-                log::warn!("[rpc] client create failed: {}", e);
-                self.emit_status(false, &format!("Discord IPC error: {}", e));
+                log::warn!("[rpc] connect failed: {}", e);
+                self.emit_status(false, &format!("Discord not available: {}", e));
                 false
             }
         }

@@ -26,11 +26,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
 tokio = { version = "1", features = ["full"] }
-tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
-reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "rustls", "webpki-roots"], default-features = false }
 dirs = "6"
 anyhow = "1"
-discord-rich-presence = "0.2"
+discord-rich-presence = "1.1"
 base64 = "0.22"
 tauri-plugin-autostart = "2"
