@@ -56,24 +56,24 @@ On first launch, click **Install** in the app.
 
 This will:
 - Request your unique token from the server
-- Download your personalised `discord-rpc.3gx` plugin (stored in your app config directory)
+- Download your personalised `default.3gx` plugin (stored in your app config directory)
 - Start the local daemon that keeps your Discord status up to date
 
 ### 2. Copy the plugin to your 3DS SD card
 
 ```
 # Global fallback (all games)
-SD:/luma/plugins/default/discord-rpc.3gx
+SD:/luma/plugins/default.3gx
 
 # Or per-game (replace 00040000001B5000 with the title ID)
-SD:/luma/plugins/00040000001B5000/discord-rpc.3gx
+SD:/luma/plugins/00040000001B5000/default.3gx
 ```
 
 The plugin file path is shown in the app after install.
 
 ### 3. Enable the plugin on your 3DS
 
-Hold **SELECT** while booting a game to open the Luma plugin menu and enable the plugin.
+Enable the plugin loader in Rosalina menu (hold **L+DOWN+SELECT** once console booted) and make sure Plugin Loader is enabled.
 
 That's it — your Discord status will update automatically whenever you play.
 

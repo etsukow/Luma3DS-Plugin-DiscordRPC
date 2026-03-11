@@ -3,7 +3,7 @@ use base64::Engine;
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, watch};
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
@@ -25,6 +25,10 @@ pub struct CurrentGame {
 }
 
 pub type SharedState = Arc<Mutex<AppState>>;
+
+fn plugin_path() -> std::path::PathBuf {
+    config::config_dir().join("plugin").join("default.3gx")
+}
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
@@ -69,13 +73,11 @@ pub async fn get_live_status(state: tauri::State<'_, SharedState>) -> Result<Liv
 #[tauri::command]
 pub async fn get_status() -> Result<StatusPayload, String> {
     let cfg = config::load();
-    let plugin_path = cfg.token.as_ref().map(|_| {
-        config::config_dir()
-            .join("plugin")
-            .join("discord-rpc.3gx")
-            .to_string_lossy()
-            .to_string()
-    });
+    let plugin_path_buf = plugin_path();
+    let plugin_path = cfg
+        .token
+        .as_ref()
+        .map(|_| plugin_path_buf.to_string_lossy().to_string());
     let plugin_exists = plugin_path
         .as_ref()
         .map(|p| std::path::Path::new(p).exists())
@@ -95,8 +97,8 @@ pub async fn install(app: AppHandle, state: tauri::State<'_, SharedState>) -> Re
     let mut cfg = config::load();
 
     // Step 1 — provision token if needed
-    emit_log(&app, "info", "Requesting token from server…");
     if cfg.token.is_none() {
+        emit_log(&app, "info", "Requesting token from server…");
         let resp = api::provision(&cfg.server_api)
             .await
             .map_err(|e| e.to_string())?;
@@ -120,16 +122,25 @@ pub async fn install(app: AppHandle, state: tauri::State<'_, SharedState>) -> Re
 
     // Step 2 — download plugin
     let token = cfg.token.as_ref().unwrap().clone();
-    let plugin_path = config::config_dir().join("plugin").join("discord-rpc.3gx");
-    emit_log(&app, "info", "Building personalised plugin on server…");
-    let version = api::download_plugin(&cfg.server_api, &token, &plugin_path)
-        .await
-        .map_err(|e| e.to_string())?;
-    emit_log(
-        &app,
-        "success",
-        &format!("Plugin saved: {} (v{})", plugin_path.display(), version),
-    );
+    let plugin_path = plugin_path();
+
+    if plugin_path.exists() {
+        emit_log(
+            &app,
+            "info",
+            "Plugin already present locally, skipping server build.",
+        );
+    } else {
+        emit_log(&app, "info", "Building personalised plugin on server…");
+        let version = api::download_plugin(&cfg.server_api, &token, &plugin_path)
+            .await
+            .map_err(|e| e.to_string())?;
+        emit_log(
+            &app,
+            "success",
+            &format!("Plugin saved: {} (v{})", plugin_path.display(), version),
+        );
+    }
 
     // Step 3 — start daemon
     emit_log(&app, "info", "Starting Discord RPC daemon…");
@@ -153,7 +164,7 @@ pub async fn uninstall(app: AppHandle, state: tauri::State<'_, SharedState>) -> 
     config::save(&cfg).map_err(|e| e.to_string())?;
 
     // Remove plugin file
-    let plugin_path = config::config_dir().join("plugin").join("discord-rpc.3gx");
+    let plugin_path = plugin_path();
     let _ = std::fs::remove_file(&plugin_path);
 
     emit_log(&app, "info", "Uninstalled — token and plugin removed");
@@ -166,7 +177,7 @@ pub async fn uninstall(app: AppHandle, state: tauri::State<'_, SharedState>) -> 
 pub async fn update_plugin(app: AppHandle) -> Result<(), String> {
     let cfg = config::load();
     let token = cfg.token.ok_or("No token — run install first")?;
-    let plugin_path = config::config_dir().join("plugin").join("discord-rpc.3gx");
+    let plugin_path = plugin_path();
 
     emit_log(&app, "info", "Updating plugin…");
     let version = api::download_plugin(&cfg.server_api, &token, &plugin_path)
@@ -210,11 +221,7 @@ pub async fn fetch_icon(url: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn get_plugin_path() -> String {
-    config::config_dir()
-        .join("plugin")
-        .join("discord-rpc.3gx")
-        .to_string_lossy()
-        .to_string()
+    plugin_path().to_string_lossy().to_string()
 }
 
 // ── Auto-start helper (called from lib.rs setup, no State needed) ─────────────

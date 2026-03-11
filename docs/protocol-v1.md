@@ -54,7 +54,7 @@ Fields:
 - `schemaVersion` — protocol version (`1`).
 - `event` — `plugin_start` or `heartbeat`.
 - `titleId` — 16-char uppercase hex title ID.
-- `token` — user token injected at build time. **Absent on legacy builds** (server falls back to routing by source IP).
+- `token` — user token injected at build time.
 
 ---
 
@@ -103,7 +103,8 @@ Sent when the watchdog fires (no heartbeat for `WATCHDOG_TIMEOUT_SEC` seconds, d
 | `DRPC_HTTP_HOST` | `0.0.0.0` | HTTP API bind address |
 | `DRPC_HTTP_PORT` | `8766` | HTTP API port |
 | `DRPC_PUBLIC_UDP_HOST` | `127.0.0.1` | UDP host reported to clients via `/token` |
-| `DRPC_DOCKER_COMPOSE_FILE` | `docker-compose.yml` | Path to compose file for on-demand plugin builds |
+| `DRPC_DB_PATH` | `tokens.db` | SQLite DB path for persisted tokens |
+| `DRPC_BUILD_TIMEOUT_SEC` | `120` | Max seconds allowed for an on-demand plugin build |
 | `DRPC_WATCHDOG_TIMEOUT_SEC` | `25` | Seconds without heartbeat before RPC clear |
 
 ### Desktop app (Tauri)
@@ -123,12 +124,12 @@ desktop app install
   │                ◄── { token, udp_host, udp_port }
   │
   ├─ GET /plugin/build?token=<tok>  ────► server builds .3gx with token baked in
-  │                ◄── discord-rpc.3gx
+  │                ◄── default.3gx
   │
   └─ starts the local daemon
        └─ app daemon  ──► WS connect  ──► {"type":"auth","token":"…"}
 ```
 
 The `.3gx` must be copied to the 3DS SD card:
-- `SD:/luma/plugins/<TitleID>/discord-rpc.3gx`  (per-game)
-- `SD:/luma/plugins/default/discord-rpc.3gx`    (global fallback)
+- `SD:/luma/plugins/<TitleID>/default.3gx`  (per-game)
+- `SD:/luma/plugins/default/default.3gx`    (global fallback)

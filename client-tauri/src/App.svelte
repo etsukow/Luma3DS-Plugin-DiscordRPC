@@ -456,7 +456,7 @@
                         </button>
                     </div>
                     <div class="sd-hint">
-                        → <code>SD:/luma/plugins/default/discord-rpc.3gx</code>
+                        → <code>SD:/luma/plugins/default.3gx</code>
                     </div>
                 </div>
             {/if}
