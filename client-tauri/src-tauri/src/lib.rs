@@ -6,8 +6,10 @@ mod ws;
 
 use commands::{AppState, SharedState};
 use std::sync::Arc;
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri::{
-    ActivationPolicy, Manager,
+    Manager,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
