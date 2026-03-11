@@ -54,6 +54,12 @@ Download the latest Tauri build for your OS from the [Releases](https://github.c
 
 On first launch, click **Install** in the app.
 
+If macOS blocks the app because of quarantine, run:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/3DS Discord RPC.app"
+```
+
 This will:
 - Request your unique token from the server
 - Download your personalised `default.3gx` plugin (stored in your app config directory)
