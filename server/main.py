@@ -23,31 +23,32 @@ import json
 import os
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
-from websockets.asyncio.server import ServerConnection, serve as ws_serve
+from websockets.asyncio.server import ServerConnection
+from websockets.asyncio.server import serve as ws_serve
 
 # ── Environment ───────────────────────────────────────────────────────────────
-UDP_HOST             = os.getenv("DRPC_UDP_HOST", "0.0.0.0")
-UDP_PORT             = int(os.getenv("DRPC_UDP_PORT", "5005"))
-WS_HOST              = os.getenv("DRPC_WS_HOST", "0.0.0.0")
-WS_PORT              = int(os.getenv("DRPC_WS_PORT", "8765"))
-HTTP_HOST            = os.getenv("DRPC_HTTP_HOST", "0.0.0.0")
-HTTP_PORT            = int(os.getenv("DRPC_HTTP_PORT", "8766"))
-API_TEMPLATE         = os.getenv("DRPC_TITLE_API_TEMPLATE", "https://api.nlib.cc/ctr/{tid}")
-API_TIMEOUT_SEC      = float(os.getenv("DRPC_API_TIMEOUT_SEC", "5.0"))
+UDP_HOST = os.getenv("DRPC_UDP_HOST", "0.0.0.0")
+UDP_PORT = int(os.getenv("DRPC_UDP_PORT", "5005"))
+WS_HOST = os.getenv("DRPC_WS_HOST", "0.0.0.0")
+WS_PORT = int(os.getenv("DRPC_WS_PORT", "8765"))
+HTTP_HOST = os.getenv("DRPC_HTTP_HOST", "0.0.0.0")
+HTTP_PORT = int(os.getenv("DRPC_HTTP_PORT", "8766"))
+API_TEMPLATE = os.getenv("DRPC_TITLE_API_TEMPLATE", "https://api.nlib.cc/ctr/{tid}")
+API_TIMEOUT_SEC = float(os.getenv("DRPC_API_TIMEOUT_SEC", "5.0"))
 WATCHDOG_TIMEOUT_SEC = float(os.getenv("DRPC_WATCHDOG_TIMEOUT_SEC", "25.0"))
+BUILD_TIMEOUT_SEC = float(os.getenv("DRPC_BUILD_TIMEOUT_SEC", "120.0"))
 # Public UDP hostname reported to new clients so the 3DS knows where to send.
-PUBLIC_UDP_HOST      = os.getenv("DRPC_PUBLIC_UDP_HOST", "127.0.0.1")
-DOCKER_COMPOSE_FILE  = os.getenv(
-    "DRPC_DOCKER_COMPOSE_FILE",
-    str(Path(__file__).parent / "docker-compose.yml"),
-)
+PUBLIC_UDP_HOST = os.getenv("DRPC_PUBLIC_UDP_HOST", "127.0.0.1")
+DB_PATH = os.getenv("DRPC_DB_PATH", str(Path(__file__).parent / "tokens.db"))
 _TID_MAP_PATH = os.path.join(os.path.dirname(__file__), "tid_map.json")
+PLUGIN_BUILD_LOCK = asyncio.Lock()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,6 +106,58 @@ def fetch_title_info(tid: str) -> Dict[str, str]:
 
 # ── Per-token state ───────────────────────────────────────────────────────────
 
+
+class TokenStore:
+    """SQLite-backed token persistence."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self._init_schema()
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path)
+
+    def _init_schema(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS tokens (
+                    token TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.commit()
+
+    def load_all(self) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT token FROM tokens").fetchall()
+        return [r[0] for r in rows]
+
+    def provision(self) -> str:
+        # Keep retrying until an insertion succeeds (extremely unlikely collision).
+        while True:
+            tok = secrets.token_urlsafe(24)
+            try:
+                with self._connect() as conn:
+                    conn.execute(
+                        "INSERT INTO tokens(token, created_at) VALUES (?, ?)",
+                        (tok, now_iso()),
+                    )
+                    conn.commit()
+                return tok
+            except sqlite3.IntegrityError:
+                continue
+
+    def ensure(self, token: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO tokens(token, created_at) VALUES (?, ?)",
+                (token, now_iso()),
+            )
+            conn.commit()
+
+
 class TokenState:
     """All mutable state for one user / one token."""
 
@@ -125,7 +178,12 @@ class TokenState:
             resolved = await asyncio.to_thread(fetch_title_info, tid)
             self.cache[tid] = resolved
             return resolved
-        except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as exc:
             self.error_cache[tid] = str(exc)
             print(f"[{now_iso()}] titleId={tid} api_error={exc}", flush=True)
             return {"name": f"Title {tid}", "icon": ""}
@@ -145,15 +203,19 @@ class TokenState:
 
 # ── Global registry ───────────────────────────────────────────────────────────
 
+
 class Registry:
     """Maps token strings → TokenState."""
 
-    def __init__(self) -> None:
+    def __init__(self, store: TokenStore) -> None:
+        self.store = store
         self._states: Dict[str, TokenState] = {}
+        for tok in self.store.load_all():
+            self._states[tok] = TokenState(tok)
 
     def provision(self) -> str:
-        """Create and register a fresh cryptographically-random token."""
-        tok = secrets.token_urlsafe(24)
+        """Create and persist a fresh cryptographically-random token."""
+        tok = self.store.provision()
         self._states[tok] = TokenState(tok)
         print(f"[{now_iso()}] token_provisioned token={tok[:8]}…", flush=True)
         return tok
@@ -163,6 +225,8 @@ class Registry:
 
     def get_or_create(self, token: str) -> TokenState:
         if token not in self._states:
+            if not token.startswith("__ip_"):
+                self.store.ensure(token)
             self._states[token] = TokenState(token)
         return self._states[token]
 
@@ -171,6 +235,7 @@ class Registry:
 
 
 # ── UDP Protocol ──────────────────────────────────────────────────────────────
+
 
 class UdpProtocol(asyncio.DatagramProtocol):
     def __init__(self, registry: Registry) -> None:
@@ -258,7 +323,10 @@ async def ws_handler(conn: ServerConnection, registry: Registry) -> None:
 
     state = registry.get_or_create(tok)
     state.clients.add(conn)
-    print(f"[{now_iso()}] ws_auth token={tok[:8]}… clients={len(state.clients)}", flush=True)
+    print(
+        f"[{now_iso()}] ws_auth token={tok[:8]}… clients={len(state.clients)}",
+        flush=True,
+    )
 
     # Catch up: send current presence if 3DS is already playing.
     if state.last_title_id and state.last_seen is not None:
@@ -279,10 +347,14 @@ async def ws_handler(conn: ServerConnection, registry: Registry) -> None:
         await conn.wait_closed()
     finally:
         state.clients.discard(conn)
-        print(f"[{now_iso()}] ws_disconnect token={tok[:8]}… clients={len(state.clients)}", flush=True)
+        print(
+            f"[{now_iso()}] ws_disconnect token={tok[:8]}… clients={len(state.clients)}",
+            flush=True,
+        )
 
 
 # ── Watchdog ──────────────────────────────────────────────────────────────────
+
 
 async def watchdog(registry: Registry) -> None:
     """Per-token watchdog: clears RPC when no heartbeat arrives within the timeout."""
@@ -305,11 +377,16 @@ async def watchdog(registry: Registry) -> None:
 
 # ── HTTP API (minimal asyncio stream server) ──────────────────────────────────
 
-async def http_handler(registry: Registry,
-                       reader: asyncio.StreamReader,
-                       writer: asyncio.StreamWriter) -> None:
+
+async def http_handler(
+    registry: Registry, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+) -> None:
     try:
-        req_line = (await asyncio.wait_for(reader.readline(), timeout=5.0)).decode(errors="replace").strip()
+        req_line = (
+            (await asyncio.wait_for(reader.readline(), timeout=5.0))
+            .decode(errors="replace")
+            .strip()
+        )
         if not req_line:
             return
         parts = req_line.split(" ")
@@ -325,10 +402,14 @@ async def http_handler(registry: Registry,
 
         if method == "POST" and path_qs.rstrip("/") == "/token":
             tok = registry.provision()
-            _respond(writer, 201, "Created",
-                     json.dumps({"token": tok,
-                                 "udp_host": PUBLIC_UDP_HOST,
-                                 "udp_port": UDP_PORT}).encode())
+            _respond(
+                writer,
+                201,
+                "Created",
+                json.dumps(
+                    {"token": tok, "udp_host": PUBLIC_UDP_HOST, "udp_port": UDP_PORT}
+                ).encode(),
+            )
 
         elif method == "GET" and path_qs.startswith("/plugin/build"):
             qs = path_qs.split("?", 1)[1] if "?" in path_qs else ""
@@ -344,12 +425,20 @@ async def http_handler(registry: Registry,
         writer.close()
 
 
-def _respond(writer: asyncio.StreamWriter, status: int, reason: str, body: bytes,
-             ct: str = "application/json", extra: Optional[Dict[str, str]] = None) -> None:
-    h = (f"HTTP/1.1 {status} {reason}\r\n"
-         f"Content-Type: {ct}\r\n"
-         f"Content-Length: {len(body)}\r\n"
-         f"Connection: close\r\n")
+def _respond(
+    writer: asyncio.StreamWriter,
+    status: int,
+    reason: str,
+    body: bytes,
+    ct: str = "application/json",
+    extra: Optional[Dict[str, str]] = None,
+) -> None:
+    h = (
+        f"HTTP/1.1 {status} {reason}\r\n"
+        f"Content-Type: {ct}\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        f"Connection: close\r\n"
+    )
     if extra:
         h += "".join(f"{k}: {v}\r\n" for k, v in extra.items())
     writer.write((h + "\r\n").encode() + body)
@@ -364,67 +453,105 @@ async def _serve_plugin(token: str, writer: asyncio.StreamWriter) -> None:
 
     build_dir = Path(__file__).parent
 
-    compose_file = Path(DOCKER_COMPOSE_FILE)
-    if not compose_file.exists():
-        _respond(writer, 503, "Service Unavailable",
-                 b'{"error":"build environment not configured (missing docker compose file)"}')
-        return
-    if shutil.which("docker") is None:
-        _respond(writer, 503, "Service Unavailable",
-                 b'{"error":"build environment not configured (docker missing)"}')
-        return
-
-    env = {
-        **os.environ,
-        "DRPC_TOKEN": token,
-        "DRPC_SERVER_WS_URL": f"ws://{PUBLIC_UDP_HOST}:{UDP_PORT}",
-        "PATH": os.environ.get("PATH", ""),
-    }
-    cmd = ["docker", "compose", "-f", str(compose_file), "run", "--rm", "builder"]
-    cwd = str(compose_file.parent)
-
-    try:
-        result = await asyncio.to_thread(
-            subprocess.run,
-            cmd,
-            capture_output=True, cwd=cwd, env=env, timeout=120,
+    make_bin = shutil.which("make")
+    gxtool_bin = shutil.which("3gxtool")
+    if make_bin is None:
+        _respond(
+            writer,
+            503,
+            "Service Unavailable",
+            b'{"error":"build environment not configured (make missing)"}',
         )
-    except subprocess.TimeoutExpired:
-        _respond(writer, 504, "Gateway Timeout", b'{"error":"build timed out"}')
         return
-    except FileNotFoundError:
-        _respond(writer, 503, "Service Unavailable", b'{"error":"docker not found"}')
-        return
-
-    if result.returncode != 0:
-        err = result.stderr.decode("utf-8", errors="replace")[-512:]
-        print(f"[{now_iso()}] plugin build failed: {err}", flush=True)
-        _respond(writer, 500, "Internal Server Error",
-                 json.dumps({"error": "build failed", "detail": err}).encode())
+    if gxtool_bin is None:
+        _respond(
+            writer,
+            503,
+            "Service Unavailable",
+            b'{"error":"build environment not configured (3gxtool missing)"}',
+        )
         return
 
-    built = build_dir / "default.3gx"
-    if not built.exists():
-        _respond(writer, 500, "Internal Server Error",
-                 b'{"error":"artefact not found after build"}')
-        return
+    async with PLUGIN_BUILD_LOCK:
+        env = {
+            **os.environ,
+            "DRPC_TOKEN": token,
+            "DRPC_SERVER_WS_URL": f"ws://{PUBLIC_UDP_HOST}:{UDP_PORT}",
+            "THREEGXTOOL": gxtool_bin,
+            "PATH": os.environ.get("PATH", ""),
+        }
+        cmd = [make_bin, "clean", "all", f"THREEGXTOOL={gxtool_bin}"]
+        cwd = str(build_dir)
 
-    data = built.read_bytes()
-    _respond(writer, 200, "OK", data, ct="application/octet-stream",
-             extra={"X-Plugin-Version": "0.1.1",
-                    "Content-Disposition": 'attachment; filename="discord-rpc.3gx"'})
-    print(f"[{now_iso()}] plugin served {len(data)} bytes token={token[:8]}…", flush=True)
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                capture_output=True,
+                cwd=cwd,
+                env=env,
+                timeout=BUILD_TIMEOUT_SEC,
+            )
+        except subprocess.TimeoutExpired:
+            _respond(writer, 504, "Gateway Timeout", b'{"error":"build timed out"}')
+            return
+        except FileNotFoundError:
+            _respond(writer, 503, "Service Unavailable", b'{"error":"make not found"}')
+            return
+
+        if result.returncode != 0:
+            out = result.stdout.decode("utf-8", errors="replace")[-512:]
+            err = result.stderr.decode("utf-8", errors="replace")[-512:]
+            detail = err if err else out
+            print(f"[{now_iso()}] plugin build failed: {detail}", flush=True)
+            _respond(
+                writer,
+                500,
+                "Internal Server Error",
+                json.dumps({"error": "build failed", "detail": detail}).encode(),
+            )
+            return
+
+        built = build_dir / "default.3gx"
+        if not built.exists():
+            _respond(
+                writer,
+                500,
+                "Internal Server Error",
+                b'{"error":"artefact not found after build"}',
+            )
+            return
+
+        data = built.read_bytes()
+        _respond(
+            writer,
+            200,
+            "OK",
+            data,
+            ct="application/octet-stream",
+            extra={
+                "X-Plugin-Version": "1.0.1",
+                "Content-Disposition": 'attachment; filename="default.3gx"',
+            },
+        )
+        print(
+            f"[{now_iso()}] plugin served {len(data)} bytes token={token[:8]}…",
+            flush=True,
+        )
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 async def main() -> None:
-    registry = Registry()
+    store = TokenStore(DB_PATH)
+    registry = Registry(store)
     loop = asyncio.get_running_loop()
 
     # UDP
     transport, _ = await loop.create_datagram_endpoint(
-        lambda: UdpProtocol(registry), local_addr=(UDP_HOST, UDP_PORT))
+        lambda: UdpProtocol(registry), local_addr=(UDP_HOST, UDP_PORT)
+    )
     print(f"[{now_iso()}] UDP  listening on {UDP_HOST}:{UDP_PORT}", flush=True)
 
     # WebSocket
@@ -433,7 +560,8 @@ async def main() -> None:
 
         # HTTP API
         http_server = await asyncio.start_server(
-            lambda r, w: http_handler(registry, r, w), HTTP_HOST, HTTP_PORT)
+            lambda r, w: http_handler(registry, r, w), HTTP_HOST, HTTP_PORT
+        )
         print(f"[{now_iso()}] HTTP listening on {HTTP_HOST}:{HTTP_PORT}", flush=True)
         print(f"[{now_iso()}] Watchdog: {WATCHDOG_TIMEOUT_SEC:.0f}s", flush=True)
 
