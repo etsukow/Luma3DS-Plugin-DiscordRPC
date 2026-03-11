@@ -7,12 +7,27 @@ mod ws;
 use commands::{AppState, SharedState};
 use std::sync::Arc;
 use tauri::{
-    Manager,
+    ActivationPolicy, Manager,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
+
+fn hide_to_tray(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(ActivationPolicy::Accessory);
+    let _ = window.set_skip_taskbar(true);
+    let _ = window.hide();
+}
+
+fn show_from_tray(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(ActivationPolicy::Regular);
+    let _ = window.set_skip_taskbar(false);
+    let _ = window.show();
+    let _ = window.set_focus();
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -33,7 +48,7 @@ pub fn run() {
             // Start hidden when launched via autostart
             if std::env::args().any(|a| a == "--hidden") {
                 if let Some(win) = app.get_webview_window("main") {
-                    let _ = win.hide();
+                    hide_to_tray(app.handle(), &win);
                 }
             }
 
@@ -52,8 +67,7 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.set_focus();
+                            show_from_tray(app, &win);
                         }
                     }
                     "quit" => app.exit(0),
@@ -67,8 +81,7 @@ pub fn run() {
                     } = event
                     {
                         if let Some(win) = tray.app_handle().get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.set_focus();
+                            show_from_tray(&tray.app_handle(), &win);
                         }
                     }
                 })
@@ -98,7 +111,9 @@ pub fn run() {
         .on_window_event(|window, event| {
             // Hide to tray instead of closing
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                window.hide().unwrap();
+                if let Some(win) = window.app_handle().get_webview_window("main") {
+                    hide_to_tray(&window.app_handle(), &win);
+                }
                 api.prevent_close();
             }
         })
