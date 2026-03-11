@@ -1,11 +1,6 @@
 name: CI - Server Image
 
 on:
-  push:
-    branches: ["**"]
-    paths:
-      - "server/**"
-      - ".github/workflows/ci-server-image.yml"
   workflow_dispatch:
 
 jobs:
