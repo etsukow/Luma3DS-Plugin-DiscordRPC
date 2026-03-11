@@ -1,5 +1,5 @@
 services:
-  server:
+  discord-rpc-server:
     image: ghcr.io/etsukow/luma3ds-drpc-server:latest
     restart: unless-stopped
     ports:
@@ -9,4 +9,3 @@ services:
     environment:
       DRPC_PUBLIC_UDP_HOST: ${DRPC_PUBLIC_UDP_HOST}
       DRPC_WATCHDOG_TIMEOUT_SEC: ${DRPC_WATCHDOG_TIMEOUT_SEC:-25}
-

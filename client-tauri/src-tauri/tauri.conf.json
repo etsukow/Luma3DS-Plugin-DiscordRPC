@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "3DS Discord RPC",
-  "version": "0.2.0",
-  "identifier": "com.etsukow.drpc",
+  "version": "1.0.1",
+  "identifier": "com.etsukow.discordrpc",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
