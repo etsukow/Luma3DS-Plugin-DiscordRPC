@@ -7,9 +7,9 @@ mod ws;
 use commands::{AppState, SharedState};
 use std::sync::Arc;
 use tauri::{
+    Manager,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
@@ -92,6 +92,7 @@ pub fn run() {
             commands::start,
             commands::stop,
             commands::get_plugin_path,
+            commands::get_full_token,
             commands::fetch_icon,
         ])
         .on_window_event(|window, event| {

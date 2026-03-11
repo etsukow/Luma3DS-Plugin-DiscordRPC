@@ -224,6 +224,11 @@ pub fn get_plugin_path() -> String {
     plugin_path().to_string_lossy().to_string()
 }
 
+#[tauri::command]
+pub fn get_full_token() -> Option<String> {
+    config::load().token
+}
+
 // ── Auto-start helper (called from lib.rs setup, no State needed) ─────────────
 
 pub async fn try_autostart(app: AppHandle, state: SharedState) {

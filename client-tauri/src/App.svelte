@@ -24,6 +24,9 @@
     let activeTab = $state("dashboard");
     let copied = $state(false);
     let autostartEnabled = $state(false);
+    let fullToken = $state(null);
+    let showToken = $state(false);
+    let showUninstallConfirm = $state(false);
 
     const MAX_LOGS = 200;
 
@@ -59,6 +62,7 @@
 
     onMount(async () => {
         status = await invoke("get_status");
+        fullToken = await invoke("get_full_token");
         autostartEnabled = await isEnabled();
 
         unlisten.push(
@@ -158,10 +162,10 @@
     async function doInstall() {
         busy = true;
         logs = [];
-        activeTab = "logs";
         try {
             await invoke("install");
             status = await invoke("get_status");
+            fullToken = await invoke("get_full_token");
         } catch (e) {
             addLog("error", `Install failed: ${e}`);
         } finally {
@@ -170,19 +174,26 @@
     }
 
     async function doUninstall() {
-        if (
-            !confirm(
-                "Remove the service and your token? You will need to re-install.",
-            )
-        )
-            return;
+        showUninstallConfirm = true;
+    }
+
+    async function confirmUninstall() {
+        showUninstallConfirm = false;
         busy = true;
+        addLog("info", "Uninstalling…");
         try {
             await invoke("uninstall");
+            fullToken = null;
+            showToken = false;
         } catch (e) {
             addLog("error", `Uninstall failed: ${e}`);
             busy = false;
         }
+    }
+
+    function cancelUninstall() {
+        showUninstallConfirm = false;
+        addLog("info", "Uninstall canceled");
     }
 
     async function doUpdatePlugin() {
@@ -590,10 +601,23 @@
                     <span class="label-text">API URL</span>
                     <input type="text" value={status.server_api} disabled />
                 </label>
-                {#if status.token}
+                {#if fullToken}
                     <label>
                         <span class="label-text">Your token</span>
-                        <input type="text" value={status.token} disabled />
+                        <div class="token-row">
+                            <input
+                                type={showToken ? "text" : "password"}
+                                value={fullToken}
+                                disabled
+                            />
+                            <button
+                                class="btn-sm token-toggle"
+                                type="button"
+                                onclick={() => (showToken = !showToken)}
+                            >
+                                {showToken ? "Hide" : "Show"}
+                            </button>
+                        </div>
                     </label>
                 {/if}
                 <p class="settings-hint">
@@ -621,6 +645,52 @@
         </section>
     {/if}
 </main>
+
+{#if showUninstallConfirm}
+    <div
+        class="modal-backdrop"
+        role="button"
+        tabindex="0"
+        aria-label="Close uninstall confirmation"
+        onclick={(e) => {
+            if (e.target === e.currentTarget) cancelUninstall();
+        }}
+        onkeydown={(e) => {
+            if (e.key === "Escape" || e.key === "Enter" || e.key === " ")
+                cancelUninstall();
+        }}
+    >
+        <div
+            class="confirm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm uninstall"
+            tabindex="-1"
+        >
+            <h3>Confirm uninstall</h3>
+            <p>
+                This will stop the daemon, clear your token, and remove the
+                local plugin file.
+            </p>
+            <div class="confirm-actions">
+                <button
+                    class="btn secondary"
+                    type="button"
+                    onclick={cancelUninstall}
+                >
+                    Cancel
+                </button>
+                <button
+                    class="btn ghost-danger"
+                    type="button"
+                    onclick={confirmUninstall}
+                >
+                    Uninstall
+                </button>
+            </div>
+        </div>
+    </div>
+{/if}
 
 <style>
     :global(*) {
@@ -1223,6 +1293,17 @@
         font-size: 12px;
         font-family: "SF Mono", "Fira Code", monospace;
     }
+    .token-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .token-row input {
+        flex: 1;
+    }
+    .token-toggle {
+        flex-shrink: 0;
+    }
     .settings-hint {
         font-size: 11px;
         color: #333;
@@ -1298,5 +1379,41 @@
     .gh-link svg {
         width: 14px;
         height: 14px;
+    }
+
+    .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(2px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 16px;
+    }
+    .confirm-modal {
+        width: min(420px, 100%);
+        background: #12141b;
+        border: 1px solid #2a2f3f;
+        border-radius: 12px;
+        padding: 16px;
+    }
+    .confirm-modal h3 {
+        margin: 0 0 8px;
+        font-size: 16px;
+        color: #e0e3ea;
+    }
+    .confirm-modal p {
+        margin: 0;
+        color: #888;
+        font-size: 13px;
+        line-height: 1.5;
+    }
+    .confirm-actions {
+        margin-top: 14px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
     }
 </style>
