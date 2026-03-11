@@ -45,12 +45,16 @@ jobs:
         include:
           - platform: "macos-26-intel"
             target: "x86_64-apple-darwin"
+            bundles: "dmg"
           - platform: "macos-26"
             target: "aarch64-apple-darwin"
+            bundles: "dmg"
           - platform: "ubuntu-22.04"
             target: "x86_64-unknown-linux-gnu"
+            bundles: "deb,rpm"
           - platform: "windows-latest"
             target: "x86_64-pc-windows-msvc"
+            bundles: "nsis"
     runs-on: ${{ matrix.platform }}
     if: ${{ vars.ENABLE_TAURI_BUILDS != 'false' }}
     steps:
@@ -95,7 +99,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: client-tauri
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
 
