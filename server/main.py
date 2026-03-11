@@ -157,6 +157,12 @@ class TokenStore:
             )
             conn.commit()
 
+    def revoke(self, token: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute("DELETE FROM tokens WHERE token = ?", (token,))
+            conn.commit()
+            return cur.rowcount > 0
+
 
 class TokenState:
     """All mutable state for one user / one token."""
@@ -233,6 +239,20 @@ class Registry:
     def all_states(self) -> list[TokenState]:
         return list(self._states.values())
 
+    async def revoke(self, token: str) -> bool:
+        removed = self.store.revoke(token)
+        state = self._states.pop(token, None)
+        if state is not None:
+            await state.broadcast({"type": "clear"})
+            clients = list(state.clients)
+            for client in clients:
+                try:
+                    await client.close(1008, "token revoked")
+                except Exception:
+                    pass
+            state.clients.clear()
+        return removed
+
 
 # ── UDP Protocol ──────────────────────────────────────────────────────────────
 
@@ -266,7 +286,13 @@ class UdpProtocol(asyncio.DatagramProtocol):
 
         # Prefer explicit token; fall back to source IP for legacy plugin builds.
         if tok and isinstance(tok, str):
-            state = self.registry.get_or_create(tok)
+            state = self.registry.get(tok)
+            if state is None:
+                print(
+                    f"[{now_iso()}] udp={host}:{port} unknown_token={tok[:8]}… ignored",
+                    flush=True,
+                )
+                return
         else:
             state = self.registry.get_or_create(f"__ip_{host}")
 
@@ -321,7 +347,10 @@ async def ws_handler(conn: ServerConnection, registry: Registry) -> None:
         await conn.close(1008, "missing token")
         return
 
-    state = registry.get_or_create(tok)
+    state = registry.get(tok)
+    if state is None:
+        await conn.close(1008, "unknown token")
+        return
     state.clients.add(conn)
     print(
         f"[{now_iso()}] ws_auth token={tok[:8]}… clients={len(state.clients)}",
@@ -394,11 +423,26 @@ async def http_handler(
             return
         method, path_qs = parts[0], parts[1]
 
+        content_length = 0
         # Consume HTTP headers.
         while True:
             line = await asyncio.wait_for(reader.readline(), timeout=5.0)
             if line in (b"\r\n", b"\n", b""):
                 break
+            decoded = line.decode(errors="replace").strip()
+            if ":" in decoded:
+                k, v = decoded.split(":", 1)
+                if k.strip().lower() == "content-length":
+                    try:
+                        content_length = int(v.strip())
+                    except ValueError:
+                        content_length = 0
+
+        body = b""
+        if content_length > 0:
+            body = await asyncio.wait_for(
+                reader.readexactly(content_length), timeout=5.0
+            )
 
         if method == "POST" and path_qs.rstrip("/") == "/token":
             tok = registry.provision()
@@ -409,6 +453,29 @@ async def http_handler(
                 json.dumps(
                     {"token": tok, "udp_host": PUBLIC_UDP_HOST, "udp_port": UDP_PORT}
                 ).encode(),
+            )
+        elif method == "POST" and path_qs.rstrip("/") == "/token/revoke":
+            try:
+                payload = json.loads(body.decode("utf-8")) if body else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                _respond(writer, 400, "Bad Request", b'{"error":"invalid json"}')
+                return
+
+            tok = payload.get("token") if isinstance(payload, dict) else None
+            if not isinstance(tok, str) or not tok:
+                _respond(writer, 400, "Bad Request", b'{"error":"missing token"}')
+                return
+
+            deleted = await registry.revoke(tok)
+            print(
+                f"[{now_iso()}] token_revoked token={tok[:8]}… deleted={deleted}",
+                flush=True,
+            )
+            _respond(
+                writer,
+                200,
+                "OK",
+                json.dumps({"revoked": True, "deleted": deleted}).encode(),
             )
 
         elif method == "GET" and path_qs.startswith("/plugin/build"):

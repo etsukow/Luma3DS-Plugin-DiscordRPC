@@ -160,6 +160,19 @@ pub async fn uninstall(app: AppHandle, state: tauri::State<'_, SharedState>) -> 
     stop_daemon(state.inner().clone()).await;
 
     let mut cfg = config::load();
+    let token_to_revoke = cfg.token.clone();
+    if let Some(token) = token_to_revoke {
+        emit_log(&app, "info", "Revoking token on server…");
+        match api::revoke_token(&cfg.server_api, &token).await {
+            Ok(_) => emit_log(&app, "success", "Token revoked on server"),
+            Err(e) => emit_log(
+                &app,
+                "warn",
+                &format!("Token revoke failed (continuing local uninstall): {}", e),
+            ),
+        }
+    }
+
     cfg.token = None;
     config::save(&cfg).map_err(|e| e.to_string())?;
 

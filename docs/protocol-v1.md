@@ -32,6 +32,19 @@ Provision a new token.
 { "token": "abc123…", "udp_host": "1.2.3.4", "udp_port": 5005 }
 ```
 
+### `POST /token/revoke`
+Revoke an existing token (used by desktop uninstall).
+
+**Request body:**
+```json
+{ "token": "abc123…" }
+```
+
+**Response 200:**
+```json
+{ "revoked": true, "deleted": true }
+```
+
 ### `GET /plugin/build?token=<tok>`
 Trigger a Docker build of the `.3gx` plugin with `DRPC_TOKEN` and `DRPC_SERVER_WS_URL`
 baked in. Streams the resulting binary.

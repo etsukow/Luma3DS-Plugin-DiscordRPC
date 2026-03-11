@@ -23,6 +23,18 @@ pub async fn provision(server_api: &str) -> Result<TokenResponse> {
     Ok(resp)
 }
 
+/// Revoke an existing token on the server (best effort from client side).
+pub async fn revoke_token(server_api: &str, token: &str) -> Result<()> {
+    let client = reqwest::Client::new();
+    client
+        .post(format!("{}/token/revoke", server_api))
+        .json(&serde_json::json!({ "token": token }))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(())
+}
+
 /// Download a personalised .3gx plugin for the given token.
 pub async fn download_plugin(
     server_api: &str,
