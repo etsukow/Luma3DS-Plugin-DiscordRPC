@@ -355,6 +355,9 @@ pub async fn stop_daemon(state: SharedState) {
         rpc.close();
     }
     s.rpc = None;
+    s.ws_connected = false;
+    s.rpc_connected = false;
+    s.current_game = None;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
