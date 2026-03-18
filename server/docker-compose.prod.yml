@@ -4,8 +4,8 @@ services:
     restart: unless-stopped
     ports:
       - "5005:5005/udp"
-      - "8765:8765"
-      - "8766:8766"
+      - "127.0.0.1:8765:8765"
+      - "127.0.0.1:8766:8766"
     environment:
       DRPC_PUBLIC_UDP_HOST: ${DRPC_PUBLIC_UDP_HOST}
       DRPC_WATCHDOG_TIMEOUT_SEC: ${DRPC_WATCHDOG_TIMEOUT_SEC:-25}
