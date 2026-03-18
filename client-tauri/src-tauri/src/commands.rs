@@ -145,7 +145,7 @@ pub async fn install(app: AppHandle, state: tauri::State<'_, SharedState>) -> Re
     // Step 3 — start daemon
     emit_log(&app, "info", "Starting Discord RPC daemon…");
     start_daemon(app.clone(), state.inner().clone(), cfg).await?;
-    emit_log(&app, "success", "Installation complete ✅");
+    emit_log(&app, "success", "Installation complete");
 
     app.emit(
         "install_complete",
@@ -315,6 +315,12 @@ pub async fn start_daemon(
                     {
                         let mut s = state_clone.lock().await;
                         s.ws_connected = status.connected;
+                        if !status.connected {
+                            s.current_game = None;
+                            if let Some(ref mut rpc) = s.rpc {
+                                rpc.clear();
+                            }
+                        }
                     }
                     let _ = app_clone.emit("ws_status", &status);
                 }
